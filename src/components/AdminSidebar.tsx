@@ -1,8 +1,9 @@
 import { Link, useLocation } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Users, Package, Receipt, Activity, TicketCheck, Router, Wifi,
   Shield, BarChart3, AlertTriangle, Brain, FileText, DollarSign, Bell, Clock,
-  Link2, ShieldAlert, UserCog, Settings, MapPin, Monitor,
+  Link2, ShieldAlert, UserCog, Settings, MapPin, Monitor, LogOut,
 } from "lucide-react";
 
 const navItems = [
@@ -30,6 +31,9 @@ const navItems = [
 
 const AdminSidebar = () => {
   const location = useLocation();
+  const { user, userRole, signOut } = useAuth();
+
+  const roleLabel = userRole?.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) ?? "Admin";
 
   return (
     <aside className="fixed left-0 top-0 z-40 h-screen w-64 bg-sidebar border-r border-sidebar-border flex flex-col">
@@ -78,14 +82,23 @@ const AdminSidebar = () => {
           <Users className="h-3.5 w-3.5" />
           User Portal
         </Link>
-        <div className="flex items-center gap-3 px-3 py-2">
-          <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center">
-            <Shield className="h-3.5 w-3.5 text-primary" />
+        <div className="flex items-center justify-between px-3 py-2">
+          <div className="flex items-center gap-3">
+            <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center">
+              <Shield className="h-3.5 w-3.5 text-primary" />
+            </div>
+            <div>
+              <p className="text-xs font-medium text-sidebar-accent-foreground">{roleLabel}</p>
+              <p className="text-[10px] text-sidebar-foreground truncate max-w-[120px]">{user?.email}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-xs font-medium text-sidebar-accent-foreground">Super Admin</p>
-            <p className="text-[10px] text-sidebar-foreground">admin@isp.co.ke</p>
-          </div>
+          <button
+            onClick={signOut}
+            className="p-1.5 rounded-md text-sidebar-foreground hover:bg-destructive/20 hover:text-destructive transition-colors"
+            title="Sign out"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
     </aside>
