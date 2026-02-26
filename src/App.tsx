@@ -3,6 +3,10 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "@/hooks/useAuth";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import AuthPage from "./pages/AuthPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import Index from "./pages/Index";
 import UsersPage from "./pages/UsersPage";
 import PackagesPage from "./pages/PackagesPage";
@@ -29,39 +33,47 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+const P = ({ children }: { children: React.ReactNode }) => (
+  <ProtectedRoute>{children}</ProtectedRoute>
+);
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/users" element={<UsersPage />} />
-          <Route path="/packages" element={<PackagesPage />} />
-          <Route path="/transactions" element={<TransactionsPage />} />
-          <Route path="/sessions" element={<SessionsPage />} />
-          <Route path="/tickets" element={<TicketsPage />} />
-          <Route path="/ticket-map" element={<TicketMapPage />} />
-          <Route path="/routers" element={<RoutersPage />} />
-          <Route path="/network" element={<NetworkMonitorPage />} />
-          <Route path="/analytics" element={<AnalyticsPage />} />
-          <Route path="/ai-health" element={<AIHealthPage />} />
-          <Route path="/error-logs" element={<ErrorLogsPage />} />
-          <Route path="/expenditure" element={<ExpenditurePage />} />
-          <Route path="/bandwidth" element={<BandwidthPage />} />
-          <Route path="/ip-binding" element={<IPBindingPage />} />
-          <Route path="/sharing" element={<SharingEnforcementPage />} />
-          <Route path="/kyc" element={<KYCPage />} />
-          <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path="/admin-roles" element={<AdminRolesPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/hotspot" element={<HotspotPortal />} />
-          <Route path="/portal" element={<UserPortal />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+    <AuthProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/auth" element={<AuthPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/hotspot" element={<HotspotPortal />} />
+            <Route path="/portal" element={<UserPortal />} />
+            <Route path="/" element={<P><Index /></P>} />
+            <Route path="/users" element={<P><UsersPage /></P>} />
+            <Route path="/packages" element={<P><PackagesPage /></P>} />
+            <Route path="/transactions" element={<P><TransactionsPage /></P>} />
+            <Route path="/sessions" element={<P><SessionsPage /></P>} />
+            <Route path="/tickets" element={<P><TicketsPage /></P>} />
+            <Route path="/ticket-map" element={<P><TicketMapPage /></P>} />
+            <Route path="/routers" element={<P><RoutersPage /></P>} />
+            <Route path="/network" element={<P><NetworkMonitorPage /></P>} />
+            <Route path="/analytics" element={<P><AnalyticsPage /></P>} />
+            <Route path="/ai-health" element={<P><AIHealthPage /></P>} />
+            <Route path="/error-logs" element={<P><ErrorLogsPage /></P>} />
+            <Route path="/expenditure" element={<P><ExpenditurePage /></P>} />
+            <Route path="/bandwidth" element={<P><BandwidthPage /></P>} />
+            <Route path="/ip-binding" element={<P><IPBindingPage /></P>} />
+            <Route path="/sharing" element={<P><SharingEnforcementPage /></P>} />
+            <Route path="/kyc" element={<P><KYCPage /></P>} />
+            <Route path="/notifications" element={<P><NotificationsPage /></P>} />
+            <Route path="/admin-roles" element={<P><AdminRolesPage /></P>} />
+            <Route path="/settings" element={<P><SettingsPage /></P>} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </AuthProvider>
   </QueryClientProvider>
 );
 
