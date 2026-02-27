@@ -1,5 +1,5 @@
 import AdminLayout from "@/components/AdminLayout";
-import { bandwidthSchedules } from "@/lib/mockData";
+import { useBandwidthSchedules } from "@/hooks/useDatabase";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Plus, Clock, Zap } from "lucide-react";
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const BandwidthPage = () => {
+  const { data: bandwidthSchedules = [] } = useBandwidthSchedules();
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -25,7 +26,7 @@ const BandwidthPage = () => {
         {/* Active Schedules Visual */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {["Basic", "Standard", "Premium", "Unlimited"].map((pkg) => {
-            const schedules = bandwidthSchedules.filter(s => s.package_name === pkg);
+            const schedules = bandwidthSchedules.filter((s: any) => s.packages?.name === pkg);
             return (
               <div key={pkg} className="glass-card p-5">
                 <div className="flex items-center justify-between mb-4">
@@ -78,7 +79,7 @@ const BandwidthPage = () => {
             <TableBody>
               {bandwidthSchedules.map((s) => (
                 <TableRow key={s.id} className="border-border/30">
-                  <TableCell className="text-sm font-medium">{s.package_name}</TableCell>
+                  <TableCell className="text-sm font-medium">{(s as any).packages?.name ?? "—"}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="text-[10px]">{s.label}</Badge>
                   </TableCell>

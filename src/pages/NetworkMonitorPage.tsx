@@ -1,16 +1,18 @@
 import AdminLayout from "@/components/AdminLayout";
-import { routers, activeSessions, formatBytes } from "@/lib/mockData";
+import { useRouters, useActiveSessions, formatBytes } from "@/hooks/useDatabase";
 import StatusBadge from "@/components/StatusBadge";
 import { Wifi, Activity, ArrowDown, ArrowUp, Globe } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 const NetworkMonitorPage = () => {
-  const sessionsByRouter = routers.map(r => ({
+  const { data: routers = [] } = useRouters();
+  const { data: activeSessions = [] } = useActiveSessions();
+  const sessionsByRouter = routers.map((r: any) => ({
     name: r.name.replace("Router-", ""),
-    sessions: activeSessions.filter(s => s.mikrotik_name === r.name).length,
-    total_down: activeSessions.filter(s => s.mikrotik_name === r.name).reduce((acc, s) => acc + s.bytes_in, 0),
-    total_up: activeSessions.filter(s => s.mikrotik_name === r.name).reduce((acc, s) => acc + s.bytes_out, 0),
+    sessions: activeSessions.filter((s: any) => s.mikrotik_name === r.name).length,
+    total_down: activeSessions.filter((s: any) => s.mikrotik_name === r.name).reduce((acc: number, s: any) => acc + Number(s.bytes_in), 0),
+    total_up: activeSessions.filter((s: any) => s.mikrotik_name === r.name).reduce((acc: number, s: any) => acc + Number(s.bytes_out), 0),
   }));
 
   return (
@@ -53,7 +55,7 @@ const NetworkMonitorPage = () => {
 
               {/* Interfaces */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                {router.interfaces?.map((iface) => (
+                {(router as any).router_interfaces?.map((iface: any) => (
                   <div key={iface.name} className={`rounded-lg border p-3 ${iface.status === "up" ? "border-border/50" : "border-destructive/30 bg-destructive/5"}`}>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-semibold">{iface.name}</span>

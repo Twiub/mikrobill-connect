@@ -1,6 +1,7 @@
 import AdminLayout from "@/components/AdminLayout";
 import StatCard from "@/components/StatCard";
-import { expenditures, formatKES, monthlyRevenue } from "@/lib/mockData";
+import { useExpenditures, formatKES } from "@/hooks/useDatabase";
+import { monthlyRevenue } from "@/lib/mockData";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,15 +18,16 @@ const categoryStyles: Record<string, string> = {
 };
 
 const ExpenditurePage = () => {
-  const totalExpenses = expenditures.reduce((s, e) => s + e.amount, 0);
+  const { data: expenditures = [] } = useExpenditures();
+  const totalExpenses = expenditures.reduce((s: number, e: any) => s + Number(e.amount), 0);
   const grossRevenue = 134900;
   const taxRate = 16; // VAT
   const taxableIncome = grossRevenue - totalExpenses;
   const taxDue = Math.round(taxableIncome * taxRate / 100);
   const netProfit = taxableIncome - taxDue;
 
-  const categoryBreakdown = expenditures.reduce((acc, e) => {
-    acc[e.category] = (acc[e.category] || 0) + e.amount;
+  const categoryBreakdown = expenditures.reduce((acc: Record<string, number>, e: any) => {
+    acc[e.category] = (acc[e.category] || 0) + Number(e.amount);
     return acc;
   }, {} as Record<string, number>);
 
@@ -104,14 +106,14 @@ const ExpenditurePage = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {expenditures.map((exp) => (
+              {expenditures.map((exp: any) => (
                 <TableRow key={exp.id} className="border-border/30">
                   <TableCell className="text-xs font-mono text-muted-foreground">{new Date(exp.expense_date).toLocaleDateString()}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className={`${categoryStyles[exp.category]} text-[10px] capitalize`}>{exp.category}</Badge>
                   </TableCell>
                   <TableCell className="text-sm">{exp.description}</TableCell>
-                  <TableCell className="text-sm font-mono font-semibold text-destructive">{formatKES(exp.amount)}</TableCell>
+                  <TableCell className="text-sm font-mono font-semibold text-destructive">{formatKES(Number(exp.amount))}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{exp.added_by}</TableCell>
                 </TableRow>
               ))}

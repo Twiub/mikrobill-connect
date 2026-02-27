@@ -1,5 +1,5 @@
 import AdminLayout from "@/components/AdminLayout";
-import { notifications } from "@/lib/mockData";
+import { useNotifications } from "@/hooks/useDatabase";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ const channelIcons: Record<string, React.ReactNode> = {
 };
 
 const NotificationsPage = () => {
+  const { data: notifications = [] } = useNotifications();
   return (
     <AdminLayout>
       <div className="space-y-6">

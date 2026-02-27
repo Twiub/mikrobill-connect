@@ -1,5 +1,5 @@
 import AdminLayout from "@/components/AdminLayout";
-import { tickets } from "@/lib/mockData";
+import { useTickets } from "@/hooks/useDatabase";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MapPin, AlertTriangle, CheckCircle, Clock, User } from "lucide-react";
@@ -7,8 +7,9 @@ import PriorityBadge from "@/components/PriorityBadge";
 import StatusBadge from "@/components/StatusBadge";
 
 const TicketMapPage = () => {
-  const openTickets = tickets.filter(t => t.status === "open" || t.status === "in_progress");
-  const gpsTickets = tickets.filter(t => t.lat && t.lng);
+  const { data: tickets = [] } = useTickets();
+  const openTickets = tickets.filter((t: any) => t.status === "open" || t.status === "in_progress");
+  const gpsTickets = tickets.filter((t: any) => t.lat && t.lng);
 
   return (
     <AdminLayout>
