@@ -1,5 +1,6 @@
 import AdminLayout from "@/components/AdminLayout";
 import { aiHealthReport } from "@/lib/mockData";
+// AI Health still uses mock data for health checks display
 import { Badge } from "@/components/ui/badge";
 import { Brain, CheckCircle, AlertTriangle, XCircle, RefreshCw, Lightbulb, Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";

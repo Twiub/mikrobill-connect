@@ -1,5 +1,5 @@
 import AdminLayout from "@/components/AdminLayout";
-import { kycRecords } from "@/lib/mockData";
+import { useKycRecords } from "@/hooks/useDatabase";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,13 +9,14 @@ import { useState } from "react";
 
 const KYCPage = () => {
   const [search, setSearch] = useState("");
-  const filtered = kycRecords.filter(k =>
+  const { data: kycRecords = [] } = useKycRecords();
+  const filtered = kycRecords.filter((k: any) =>
     k.full_name.toLowerCase().includes(search.toLowerCase()) ||
     k.phone.includes(search)
   );
 
-  const verified = kycRecords.filter(k => k.verified).length;
-  const pending = kycRecords.filter(k => !k.verified).length;
+  const verified = kycRecords.filter((k: any) => k.verified).length;
+  const pending = kycRecords.filter((k: any) => !k.verified).length;
 
   return (
     <AdminLayout>

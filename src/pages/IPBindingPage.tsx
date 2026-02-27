@@ -1,5 +1,5 @@
 import AdminLayout from "@/components/AdminLayout";
-import { users } from "@/lib/mockData";
+import { useSubscribers } from "@/hooks/useDatabase";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,8 +7,9 @@ import { Lock, Unlock, Link2, Globe, Shield } from "lucide-react";
 import StatusBadge from "@/components/StatusBadge";
 
 const IPBindingPage = () => {
-  const boundUsers = users.filter(u => u.mac_binding || u.static_ip);
-  const unboundUsers = users.filter(u => !u.mac_binding && !u.static_ip);
+  const { data: users = [] } = useSubscribers();
+  const boundUsers = users.filter((u: any) => u.mac_binding || u.static_ip);
+  const unboundUsers = users.filter((u: any) => !u.mac_binding && !u.static_ip);
 
   return (
     <AdminLayout>

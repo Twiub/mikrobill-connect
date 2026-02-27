@@ -1,6 +1,7 @@
 import AdminLayout from "@/components/AdminLayout";
 import StatCard from "@/components/StatCard";
-import { revenueData, packageDistribution, revenueByRouter, monthlyRevenue, customerSegments, formatKES } from "@/lib/mockData";
+import { revenueData, packageDistribution, revenueByRouter, monthlyRevenue, customerSegments } from "@/lib/mockData";
+import { formatKES } from "@/hooks/useDatabase";
 import { TrendingUp, Users, DollarSign, BarChart3, Target, AlertTriangle } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, LineChart, Line, PieChart, Pie } from "recharts";
 

@@ -1,5 +1,5 @@
 import AdminLayout from "@/components/AdminLayout";
-import { errorLogs } from "@/lib/mockData";
+import { useErrorLogs } from "@/hooks/useDatabase";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,16 +30,17 @@ const serviceStyles: Record<string, string> = {
 const ErrorLogsPage = () => {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "error" | "warn" | "info">("all");
+  const { data: errorLogs = [], isLoading } = useErrorLogs();
   
-  const filtered = errorLogs.filter(e => {
+  const filtered = errorLogs.filter((e: any) => {
     const matchesSearch = e.message.toLowerCase().includes(search.toLowerCase()) || e.service.includes(search.toLowerCase());
     const matchesFilter = filter === "all" || e.level === filter;
     return matchesSearch && matchesFilter;
   });
 
-  const errorCount = errorLogs.filter(e => e.level === "error").length;
-  const warnCount = errorLogs.filter(e => e.level === "warn").length;
-  const unresolvedCount = errorLogs.filter(e => !e.resolved).length;
+  const errorCount = errorLogs.filter((e: any) => e.level === "error").length;
+  const warnCount = errorLogs.filter((e: any) => e.level === "warn").length;
+  const unresolvedCount = errorLogs.filter((e: any) => !e.resolved).length;
 
   return (
     <AdminLayout>

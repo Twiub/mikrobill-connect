@@ -1,5 +1,5 @@
 import AdminLayout from "@/components/AdminLayout";
-import { sharingViolations } from "@/lib/mockData";
+import { useSharingViolations } from "@/hooks/useDatabase";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { ShieldAlert, Users, Wifi } from "lucide-react";
@@ -18,6 +18,7 @@ const actionStyles: Record<string, string> = {
 };
 
 const SharingEnforcementPage = () => {
+  const { data: sharingViolations = [] } = useSharingViolations();
   return (
     <AdminLayout>
       <div className="space-y-6">
