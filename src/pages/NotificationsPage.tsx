@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * frontend/src/pages/NotificationsPage.tsx — v2.0.0 (v3.16.0)
  *

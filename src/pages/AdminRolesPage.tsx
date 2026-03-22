@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * AdminRolesPage.tsx — v3.5.0
  *

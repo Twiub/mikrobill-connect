@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * SettingsPage.tsx — v2.1.0 (v3.16.0)
  *

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";

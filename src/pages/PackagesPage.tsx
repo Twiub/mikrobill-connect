@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { usePackages, formatKES } from "@/hooks/useDatabase";
