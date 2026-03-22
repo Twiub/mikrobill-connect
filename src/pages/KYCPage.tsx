@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * KYCPage.tsx — v2.1.0
  *

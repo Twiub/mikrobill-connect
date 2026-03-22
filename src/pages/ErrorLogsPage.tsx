@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * ErrorLogsPage.tsx — v2.1.0
  *

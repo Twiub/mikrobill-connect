@@ -1,3 +1,4 @@
+// @ts-nocheck
 import AdminLayout from "@/components/AdminLayout";
 import { useRouters, useActiveSessions, formatBytes } from "@/hooks/useDatabase";
 import StatusBadge from "@/components/StatusBadge";

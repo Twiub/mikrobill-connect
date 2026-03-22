@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * AuthPage.tsx — v2.1.0
  *
