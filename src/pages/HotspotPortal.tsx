@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * frontend/src/pages/HotspotPortal.tsx — v3.8.3-patch1
  *

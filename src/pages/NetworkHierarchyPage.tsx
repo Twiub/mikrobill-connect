@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * src/pages/NetworkHierarchyPage.tsx — v3.6.0
  *

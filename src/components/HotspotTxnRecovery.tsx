@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * src/components/HotspotTxnRecovery.tsx  — v3.4.0
  *

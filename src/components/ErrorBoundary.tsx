@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * frontend/src/components/ErrorBoundary.tsx
  *

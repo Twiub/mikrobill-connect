@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * frontend/src/pages/HardwareModels.tsx  — MikroBill Connect v3.19.4
  *

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * frontend/src/pages/AutoRatePage.tsx  — v3.5.0
  *

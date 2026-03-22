@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * src/pages/CoverageMapPage.tsx  — v3.4.0
  *

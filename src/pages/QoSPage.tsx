@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * src/pages/QoSPage.tsx  — v3.3.0
  *

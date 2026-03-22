@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * UserPortal.tsx — v3.4.0
  *

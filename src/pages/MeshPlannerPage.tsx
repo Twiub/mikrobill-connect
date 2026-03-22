@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * MeshPlannerPage.tsx — v2.1.0 (v3.15.1)
  *

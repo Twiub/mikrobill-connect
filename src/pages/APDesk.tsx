@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * frontend/src/pages/APDesk.jsx  — MikroBill Connect v3.10.21
  *

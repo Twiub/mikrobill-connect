@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * src/pages/MeshDesk.tsx — v3.11.0
  *

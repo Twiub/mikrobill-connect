@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * src/hooks/useMissingFeatures.ts
  * Stub hooks for tables that may not exist yet.

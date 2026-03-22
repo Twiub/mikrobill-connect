@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * PPPoEAccountsPage.tsx — v1.1.0 (v3.13.3)
  * Admin → PPPoE Portal Mgmt

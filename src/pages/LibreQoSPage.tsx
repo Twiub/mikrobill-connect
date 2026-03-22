@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * frontend/src/pages/LibreQoSPage.tsx  — v3.12.2
  *

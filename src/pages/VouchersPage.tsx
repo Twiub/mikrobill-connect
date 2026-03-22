@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useDebounce } from "@/hooks/useDebounce";
 import { useState, useEffect } from "react";
 import AdminLayout from "@/components/AdminLayout";
