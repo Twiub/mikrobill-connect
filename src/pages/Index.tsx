@@ -1,40 +1,90 @@
 import AdminLayout from "@/components/AdminLayout";
+import { PanelErrorBoundary } from "@/components/ErrorBoundary";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
-import { useTransactions, useActiveSessions, useRouters, formatKES, formatBytes } from "@/hooks/useDatabase";
+import { useTransactions, useActiveSessions, useRouters, useSubscribers, formatKES, formatBytes } from "@/hooks/useDatabase";
 import { DollarSign, Users, Activity, TrendingUp, Wifi, AlertTriangle } from "lucide-react";
+import { useBranding } from "@/hooks/useBranding";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { revenueData, packageDistribution } from "@/lib/mockData";
 import { BarChart, Bar, Cell } from "recharts";
+import { useMemo } from "react";
+import { CardSkeleton, TableSkeleton } from "@/components/ui/skeleton";
+
+
+// PERF: Shared tooltip style — prevents new object on every render
+const CHART_TOOLTIP_STYLE = {
+  backgroundColor: "hsl(var(--card))",
+  border: "1px solid hsl(var(--border))",
+  borderRadius: "8px",
+  color: "hsl(var(--foreground))",
+};
+const COLORS = ["hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))"];
 
 const Dashboard = () => {
-  const { data: transactions } = useTransactions();
-  const { data: sessions } = useActiveSessions();
-  const { data: routers } = useRouters();
+  const { branding } = useBranding();
+  const { data: transactions = [] } = useTransactions();
+  const { data: sessions = [] }     = useActiveSessions();
+  const { data: routers = [] }      = useRouters();
+  const { data: subscribers = [] }  = useSubscribers();
 
-  const todayRevenue = transactions
-    ?.filter((t: any) => t.status === "success")
-    ?.reduce((sum: number, t: any) => sum + Number(t.amount), 0) ?? 0;
+  const txns = transactions as any[];
+  const rtrs = routers as any[];
+  const subs = subscribers as any[];
+
+  // BUG-S4-002 FIX v3.19.1: todayRevenue was summing ALL fetched transactions with no
+  // date filter. With limit=200, this could span weeks of payments. Now filters to today.
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayRevenue = txns
+    .filter((t) => t.status === "success" && new Date(t.created_at) >= todayStart)
+    .reduce((sum, t) => sum + Number(t.amount), 0);
+
+  // Build revenue trend from real transactions (last 14 days)
+  const revenueData = useMemo(() => {
+    const map: Record<string, number> = {};
+    const now = Date.now();
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(now - i * 86_400_000);
+      map[d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })] = 0;
+    }
+    txns.filter(t => t.status === "success").forEach(t => {
+      const d = new Date(t.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+      if (d in map) map[d] += Number(t.amount);
+    });
+    return Object.entries(map).map(([date, revenue]) => ({ date, revenue }));
+  }, [txns]);
+
+  // Package distribution from real subscriber data
+  const packageDist = useMemo(() => {
+    const map: Record<string, { name: string; users: number }> = {};
+    subs.forEach(s => {
+      const name = (s as any).packages?.name ?? s.package_id ?? "Unknown";
+      map[name] = map[name] ?? { name, users: 0 };
+      map[name].users++;
+    });
+    return Object.values(map).sort((a, b) => b.users - a.users).slice(0, 5);
+  }, [subs]);
 
   return (
     <AdminLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-sm text-muted-foreground mt-1">WiFi Billing System — Revenue & Network Overview</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Dashboard</h1>
+          <p className="text-sm text-muted-foreground mt-1">{branding.company_name} — Revenue & Network Overview</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard title="Total Revenue" value={formatKES(todayRevenue)} change="From transactions" changeType="positive" icon={DollarSign} />
-          <StatCard title="Active Sessions" value={String(sessions?.length ?? 0)} change="across routers" changeType="neutral" icon={Activity} />
-          <StatCard title="Routers Online" value={String(routers?.filter((r: any) => r.status === "online").length ?? 0)} change={`of ${routers?.length ?? 0} total`} changeType="neutral" icon={Wifi} />
-          <StatCard title="Pending Txns" value={String(transactions?.filter((t: any) => t.status === "pending").length ?? 0)} change="require attention" changeType="neutral" icon={TrendingUp} />
+          <StatCard title="Active Sessions" value={String((sessions as any[]).length)} change="across routers" changeType="neutral" icon={Activity} />
+          <StatCard title="Routers Online" value={String(rtrs.filter(r => r.status === "online").length)} change={`of ${rtrs.length} total`} changeType="neutral" icon={Wifi} />
+          <StatCard title="Pending Txns" value={String(txns.filter(t => t.status === "pending").length)} change="require attention" changeType="neutral" icon={TrendingUp} />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <PanelErrorBoundary title="Revenue &amp; Package Charts">
+        <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-3 gap-4">
           <div className="lg:col-span-2 glass-card p-5">
-            <h3 className="text-sm font-semibold text-foreground mb-4">Revenue Trend (February)</h3>
+            <h3 className="text-sm font-semibold text-foreground mb-4">Revenue Trend ({new Date().toLocaleString("default", { month: "long" })})</h3>
             <ResponsiveContainer width="100%" height={260}>
               <AreaChart data={revenueData}>
                 <defs>
@@ -46,7 +96,7 @@ const Dashboard = () => {
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={11} />
                 <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
-                <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", color: "hsl(var(--foreground))" }} formatter={(value: number) => [formatKES(value), "Revenue"]} />
+                <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={(value: number) => [formatKES(value), "Revenue"]} />
                 <Area type="monotone" dataKey="revenue" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#revenueGradient)" />
               </AreaChart>
             </ResponsiveContainer>
@@ -55,24 +105,27 @@ const Dashboard = () => {
           <div className="glass-card p-5">
             <h3 className="text-sm font-semibold text-foreground mb-4">Users by Package</h3>
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={packageDistribution} layout="vertical">
+              <BarChart data={packageDist} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={11} />
                 <YAxis dataKey="name" type="category" stroke="hsl(var(--muted-foreground))" fontSize={11} width={70} />
-                <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", color: "hsl(var(--foreground))" }} />
+                <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={(v: number) => [v, "Subscribers"]} />
                 <Bar dataKey="users" radius={[0, 4, 4, 0]}>
-                  {packageDistribution.map((entry, index) => (
-                    <Cell key={index} fill={entry.fill} />
+                  {packageDist.map((_entry, index) => (
+                    <Cell key={index} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
+        </PanelErrorBoundary>
 
+        <PanelErrorBoundary title="Transactions &amp; Sessions">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="glass-card p-5">
             <h3 className="text-sm font-semibold text-foreground mb-4">Recent Transactions</h3>
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="border-border/50">
@@ -93,10 +146,12 @@ const Dashboard = () => {
                 ))}
               </TableBody>
             </Table>
+            </div>
           </div>
 
           <div className="glass-card p-5">
             <h3 className="text-sm font-semibold text-foreground mb-4">Live Sessions</h3>
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="border-border/50">
@@ -117,9 +172,12 @@ const Dashboard = () => {
                 ))}
               </TableBody>
             </Table>
+            </div>
           </div>
         </div>
+        </PanelErrorBoundary>
 
+        <PanelErrorBoundary title="Router Status">
         <div className="glass-card p-5">
           <h3 className="text-sm font-semibold text-foreground mb-4">MikroTik Routers</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -133,7 +191,7 @@ const Dashboard = () => {
                   <StatusBadge status={r.status} />
                 </div>
                 {r.status === "online" ? (
-                  <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="grid grid-cols-3 gap-2 text-center sm:grid-cols-3">
                     <div><p className="text-lg font-bold">{r.cpu_load}%</p><p className="text-[10px] text-muted-foreground">CPU</p></div>
                     <div><p className="text-lg font-bold">{r.memory_used}%</p><p className="text-[10px] text-muted-foreground">Memory</p></div>
                     <div><p className="text-lg font-bold">{r.active_users}</p><p className="text-[10px] text-muted-foreground">Users</p></div>
@@ -148,6 +206,7 @@ const Dashboard = () => {
             ))}
           </div>
         </div>
+        </PanelErrorBoundary>
       </div>
     </AdminLayout>
   );

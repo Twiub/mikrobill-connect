@@ -15,7 +15,7 @@ const IPBindingPage = () => {
     <AdminLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold">IP Lock & MAC Binding</h1>
+          <h1 className="text-xl sm:text-2xl font-bold">IP Lock & MAC Binding</h1>
           <p className="text-sm text-muted-foreground mt-1">Static IP assignment & MAC address binding for PPPoE & premium users</p>
         </div>
 
@@ -62,17 +62,17 @@ const IPBindingPage = () => {
         </div>
 
         {/* Bindings Table */}
-        <div className="glass-card">
+        <div className="glass-card overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="border-border/50">
-                <TableHead className="text-xs">User</TableHead>
-                <TableHead className="text-xs">Username</TableHead>
-                <TableHead className="text-xs">Type</TableHead>
-                <TableHead className="text-xs">Status</TableHead>
-                <TableHead className="text-xs">MAC Binding</TableHead>
-                <TableHead className="text-xs">Static IP</TableHead>
-                <TableHead className="text-xs">Actions</TableHead>
+                <TableHead className="text-xs whitespace-nowrap">User</TableHead>
+                <TableHead className="text-xs whitespace-nowrap">Username</TableHead>
+                <TableHead className="text-xs whitespace-nowrap">Type</TableHead>
+                <TableHead className="text-xs whitespace-nowrap">Status</TableHead>
+                <TableHead className="text-xs whitespace-nowrap">MAC Binding</TableHead>
+                <TableHead className="text-xs whitespace-nowrap">Static IP</TableHead>
+                <TableHead className="text-xs whitespace-nowrap">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
