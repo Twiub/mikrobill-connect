@@ -1,77 +1,426 @@
+// @ts-nocheck
+import { useState, useMemo } from "react";
+import { useDebounce } from "@/hooks/useDebounce";
 import AdminLayout from "@/components/AdminLayout";
 import StatusBadge from "@/components/StatusBadge";
-import { useSubscribers, formatKES } from "@/hooks/useDatabase";
+import { useSubscribers, usePackages, useRouters, formatKES } from "@/hooks/useDatabase";
+import { supabase } from "@/integrations/supabase/client";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { Search, UserPlus } from "lucide-react";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Search, UserPlus, Loader2, Save, Wifi, Network, Eye, EyeOff, RefreshCw } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+
+function genPassword(len = 8) {
+  const chars = "abcdefghjkmnpqrstuvwxyz23456789";
+  return Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+}
+
+function genUsername(full_name: string, phone: string) {
+  const base = full_name.trim().split(" ")[0].toLowerCase().replace(/[^a-z]/g, "");
+  const suffix = phone.slice(-4);
+  return `${base}${suffix}`;
+}
+
+const EMPTY_SUB = {
+  full_name: "", phone: "", username: "", type: "hotspot",
+  package_id: "", router_id: "", status: "active",
+  pppoe_username: "", pppoe_password: "",
+  hotspot_enabled: false, hotspot_package_ids: [] as string[],
+  mac_binding: "", static_ip: "", kyc_verified: false,
+};
+
+const PackageFilterBtn = ({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) => (
+  <button
+    onClick={onClick}
+    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${active ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:border-primary/50"}`}
+  >
+    {label}
+  </button>
+);
 
 const UsersPage = () => {
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
+  const [typeFilter, setTypeFilter] = useState<string>("all");
   const { data: subscribers, isLoading } = useSubscribers(search || undefined);
+  const { data: packages = [] } = usePackages();
+  const { data: routers = [] } = useRouters();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState({ ...EMPTY_SUB });
+  const [showPwd, setShowPwd] = useState(false);
+
+  const filtered = subscribers?.filter((u: any) => {
+    if (typeFilter === "all") return true;
+    if (typeFilter === "pppoe") return u.type === "pppoe" || u.type === "both";
+    if (typeFilter === "hotspot") return u.type === "hotspot" || u.type === "both";
+    return true;
+  });
+
+  const openAdd = () => {
+    setEditId(null);
+    setForm({ ...EMPTY_SUB });
+    setOpen(true);
+  };
+
+  const openEdit = (u: any) => {
+    setEditId(u.id);
+    setForm({
+      full_name: u.full_name ?? "", phone: u.phone ?? "", username: u.username ?? "",
+      type: u.type ?? "hotspot", package_id: u.package_id ?? "", router_id: u.router_id ?? "",
+      status: u.status ?? "active", pppoe_username: u.pppoe_username ?? "",
+      pppoe_password: "", hotspot_enabled: u.hotspot_enabled ?? false,
+      hotspot_package_ids: u.hotspot_package_ids ?? [],
+      mac_binding: u.mac_binding ?? "", static_ip: u.static_ip ?? "",
+      kyc_verified: u.kyc_verified ?? false,
+    });
+    setOpen(true);
+  };
+
+  const set = (k: keyof typeof EMPTY_SUB) => (v: any) => setForm((f) => ({ ...f, [k]: v }));
+
+  const autoFill = () => {
+    if (form.full_name && form.phone) {
+      const uname = genUsername(form.full_name, form.phone);
+      const pwd = genPassword();
+      setForm((f) => ({ ...f, username: f.username || uname, pppoe_password: f.pppoe_password || pwd, pppoe_username: f.pppoe_username || uname }));
+    }
+  };
+
+  const handleSave = async () => {
+    if (!form.full_name.trim() || !form.phone.trim() || !form.username.trim()) {
+      toast({ title: "Validation Error", description: "Full name, phone and username are required.", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      // HIGH-01 FIX v3.19.0: Route through backend API instead of writing directly
+      // to Supabase. Direct Supabase writes stored pppoe_password as PLAINTEXT and
+      // never generated portal_password_hash or nt_password — PPPoE subscribers
+      // created via the admin UI could not authenticate via RADIUS (MSCHAPv2).
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+
+      const payload: any = {
+        full_name: form.full_name.trim(),
+        phone: form.phone.trim(),
+        username: form.username.trim(),
+        type: form.type,
+        package_id: form.package_id || null,
+        router_id: form.router_id || null,
+        status: form.status,
+        pppoe_username: form.pppoe_username || null,
+        hotspot_enabled: form.hotspot_enabled,
+        hotspot_package_ids: form.hotspot_package_ids.length ? form.hotspot_package_ids : null,
+        mac_binding: form.mac_binding || null,
+        static_ip: form.static_ip || null,
+        kyc_verified: form.kyc_verified,
+      };
+      // Only send password if it was entered (backend ignores absent field on update)
+      if (form.pppoe_password) payload.pppoe_password = form.pppoe_password;
+
+      const url    = editId ? `${API}/admin/subscribers/${editId}` : `${API}/admin/subscribers`;
+      const method = editId ? "PATCH" : "POST";
+
+      const res  = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error ?? data.errors?.[0]?.msg ?? "Save failed");
+      }
+
+      toast({
+        title: editId ? "Subscriber Updated" : "Subscriber Added",
+        description: `${form.full_name} ${editId ? "saved" : "created"} successfully.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["subscribers"] });
+      setOpen(false);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const hotspotPkgs = (packages as any[]).filter((p) => p.type === "hotspot" || p.type === "both");
 
   return (
     <AdminLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold">Subscribers</h1>
-            <p className="text-sm text-muted-foreground mt-1">Manage hotspot & PPPoE users</p>
+            <h1 className="text-xl sm:text-2xl font-bold">Subscribers</h1>
+            <p className="text-sm text-muted-foreground mt-1">Manage hotspot &amp; PPPoE users</p>
           </div>
-          <Button size="sm" className="gap-2">
-            <UserPlus className="h-4 w-4" />
-            Add User
+          <Button size="sm" className="gap-2" onClick={openAdd}>
+            <UserPlus className="h-4 w-4" />Add User
           </Button>
         </div>
 
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by name, username or phone..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 bg-card border-border"
-          />
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Search by name, username or phone..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 bg-card border-border" />
+          </div>
+          <div className="flex gap-2">
+            {["all", "hotspot", "pppoe"].map((t) => (
+              <PackageFilterBtn key={t} label={t === "all" ? "All" : t === "hotspot" ? "Hotspot" : "PPPoE"} active={typeFilter === t} onClick={() => setTypeFilter(t)} />
+            ))}
+          </div>
         </div>
 
-        <div className="glass-card">
+        <div className="glass-card overflow-x-auto">
           {isLoading ? (
-            <div className="p-8 text-center text-muted-foreground">Loading subscribers...</div>
+            <Table><TableBody><TableSkeleton rows={8} cols={10} /></TableBody></Table>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow className="border-border/50">
-                  <TableHead className="text-xs">Name</TableHead>
-                  <TableHead className="text-xs">Username</TableHead>
-                  <TableHead className="text-xs">Phone</TableHead>
-                  <TableHead className="text-xs">Type</TableHead>
-                  <TableHead className="text-xs">Package</TableHead>
-                  <TableHead className="text-xs">Status</TableHead>
-                  <TableHead className="text-xs">Devices</TableHead>
-                  <TableHead className="text-xs">Data Used</TableHead>
-                  <TableHead className="text-xs">Expires</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Name</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Username</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Phone</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Type</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Package</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Status</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Devices</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Data Used</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Expires</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {subscribers?.map((u: any) => (
-                  <TableRow key={u.id} className="border-border/30 cursor-pointer hover:bg-muted/30">
+                {filtered?.map((u: any) => (
+                  <TableRow key={u.id} className="border-border/30 hover:bg-muted/30">
                     <TableCell className="text-sm font-medium">{u.full_name}</TableCell>
                     <TableCell className="text-xs font-mono text-muted-foreground">{u.username}</TableCell>
                     <TableCell className="text-xs font-mono">{u.phone}</TableCell>
-                    <TableCell><StatusBadge status={u.type === "hotspot" ? "active" : "online"} /></TableCell>
+                    <TableCell>
+                      <div className="flex gap-1 flex-wrap">
+                        {(u.type === "hotspot" || u.type === "both") && <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px]"><Wifi className="h-2.5 w-2.5 mr-1" />HS</Badge>}
+                        {(u.type === "pppoe" || u.type === "both") && <Badge variant="outline" className="bg-info/10 text-info border-info/30 text-[10px]"><Network className="h-2.5 w-2.5 mr-1" />PPP</Badge>}
+                        {u.hotspot_enabled && u.type === "pppoe" && <Badge variant="outline" className="bg-success/10 text-success border-success/30 text-[10px]">+HS</Badge>}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-xs font-medium">{u.packages?.name ?? "—"}</TableCell>
-                    <TableCell><StatusBadge status={u.status} /></TableCell>
+                    <TableCell>
+                      {/* MED-08 FIX v3.19.0: Compute effective status client-side.
+                          expiryEnforcer may lag up to 2 minutes after expiry — during that
+                          window subscribers have status='active' in DB but no internet.
+                          Show 'expired' immediately if expires_at is in the past, without
+                          waiting for the background job to catch up. Only affects display;
+                          DB is authoritative for all backend checks. */}
+                      <StatusBadge status={
+                        u.status === "active" && u.expires_at && new Date(u.expires_at) < new Date()
+                          ? "expired"
+                          : u.status
+                      } />
+                    </TableCell>
                     <TableCell className="text-xs text-center">{u.devices_count}</TableCell>
                     <TableCell className="text-xs font-mono">{u.data_used_gb} GB</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{u.expires_at ? new Date(u.expires_at).toLocaleDateString() : "—"}</TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="sm" className="h-7 text-xs text-primary" onClick={() => openEdit(u)}>Edit</Button>
+                    </TableCell>
                   </TableRow>
                 ))}
+                {filtered?.length === 0 && (
+                  <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No subscribers found</TableCell></TableRow>
+                )}
               </TableBody>
             </Table>
           )}
         </div>
       </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editId ? "Edit Subscriber" : "Add New Subscriber"}</DialogTitle>
+          </DialogHeader>
+          <Tabs defaultValue="basic">
+            <TabsList className="mb-4">
+              <TabsTrigger value="basic">Basic Info</TabsTrigger>
+              <TabsTrigger value="connection">Connection</TabsTrigger>
+              <TabsTrigger value="pppoe">PPPoE</TabsTrigger>
+              <TabsTrigger value="hotspot">Hotspot Access</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="basic" className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>Full Name *</Label>
+                  <Input placeholder="John Doe" value={form.full_name} onChange={(e) => set("full_name")(e.target.value)} onBlur={autoFill} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Phone Number *</Label>
+                  <Input placeholder="0712345678" value={form.phone} onChange={(e) => set("phone")(e.target.value)} onBlur={autoFill} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Username *</Label>
+                  <div className="flex gap-2">
+                    <Input placeholder="johnd1234" value={form.username} onChange={(e) => set("username")(e.target.value)} />
+                    <Button type="button" variant="outline" size="sm" onClick={autoFill} title="Auto-generate"><RefreshCw className="h-3.5 w-3.5" /></Button>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Status</Label>
+                  <Select value={form.status} onValueChange={set("status")}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="expired">Expired</SelectItem>
+                      <SelectItem value="suspended">Suspended</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch checked={form.kyc_verified} onCheckedChange={set("kyc_verified")} />
+                <Label>KYC Verified</Label>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="connection" className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>Connection Type</Label>
+                  <Select value={form.type} onValueChange={set("type")}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="hotspot">Hotspot</SelectItem>
+                      <SelectItem value="pppoe">PPPoE</SelectItem>
+                      <SelectItem value="both">Both</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Package</Label>
+                  <Select value={form.package_id} onValueChange={set("package_id")}>
+                    <SelectTrigger><SelectValue placeholder="Select package" /></SelectTrigger>
+                    <SelectContent>
+                      {(packages as any[]).map((p) => (
+                        <SelectItem key={p.id} value={p.id}>{p.name} — {formatKES(p.price)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Router</Label>
+                  <Select value={form.router_id} onValueChange={set("router_id")}>
+                    <SelectTrigger><SelectValue placeholder="Select router" /></SelectTrigger>
+                    <SelectContent>
+                      {(routers as any[]).map((r) => (
+                        <SelectItem key={r.id} value={r.id}>{r.name} ({r.ip_address})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Static IP (optional)</Label>
+                  <Input placeholder="10.10.0.100" value={form.static_ip} onChange={(e) => set("static_ip")(e.target.value)} />
+                </div>
+                <div className="col-span-2 space-y-1.5">
+                  <Label>MAC Binding (optional)</Label>
+                  <Input placeholder="AA:BB:CC:DD:EE:FF" value={form.mac_binding} onChange={(e) => set("mac_binding")(e.target.value)} />
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="pppoe" className="space-y-4">
+              <div className="p-3 rounded-lg bg-muted/40 text-xs text-muted-foreground">
+                PPPoE credentials are pushed to MikroTik via <code>/ppp secret</code>. Username and password will be used for PPPoE dial-in authentication.
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>PPPoE Username</Label>
+                  <Input placeholder="Same as username usually" value={form.pppoe_username} onChange={(e) => set("pppoe_username")(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>PPPoE Password</Label>
+                  <div className="relative">
+                    <Input
+                      type={showPwd ? "text" : "password"}
+                      placeholder={editId ? "Leave blank to keep current" : "Auto-generated"}
+                      value={form.pppoe_password}
+                      onChange={(e) => set("pppoe_password")(e.target.value)}
+                    />
+                    <button type="button" onClick={() => setShowPwd(!showPwd)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                      {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={() => set("pppoe_password")(genPassword())} className="gap-1.5">
+                <RefreshCw className="h-3.5 w-3.5" />Generate Password
+              </Button>
+            </TabsContent>
+
+            <TabsContent value="hotspot" className="space-y-4">
+              <div className="p-3 rounded-lg bg-muted/40 text-xs text-muted-foreground">
+                PPPoE subscribers can also be given hotspot access to specific packages. Hotspot devices attached by the subscriber cannot be removed until the next calendar month to prevent abuse.
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch checked={form.hotspot_enabled} onCheckedChange={set("hotspot_enabled")} />
+                <Label>Enable Hotspot Access for this PPPoE subscriber</Label>
+              </div>
+              {form.hotspot_enabled && (
+                <div className="space-y-2">
+                  <Label>Allowed Hotspot Packages</Label>
+                  <p className="text-xs text-muted-foreground">Select which hotspot packages this subscriber can use. If none selected, they can use any hotspot package.</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {hotspotPkgs.map((p: any) => (
+                      <label key={p.id} className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${form.hotspot_package_ids.includes(p.id) ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
+                        <input
+                          type="checkbox"
+                          checked={form.hotspot_package_ids.includes(p.id)}
+                          onChange={(e) => {
+                            const ids = e.target.checked
+                              ? [...form.hotspot_package_ids, p.id]
+                              : form.hotspot_package_ids.filter((id) => id !== p.id);
+                            set("hotspot_package_ids")(ids);
+                          }}
+                          className="rounded"
+                        />
+                        <div>
+                          <p className="text-xs font-medium">{p.name}</p>
+                          <p className="text-[10px] text-muted-foreground">{formatKES(p.price)} · {p.duration_days}d</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving} className="gap-2">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {editId ? "Save Changes" : "Add Subscriber"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 };

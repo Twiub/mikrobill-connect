@@ -5,7 +5,11 @@ export const useSubscribers = (search?: string) =>
   useQuery({
     queryKey: ["subscribers", search],
     queryFn: async () => {
-      let q = supabase.from("subscribers").select("*, packages(name)").order("created_at", { ascending: false });
+      let q = supabase
+        .from("subscribers")
+        .select("*, packages(name)")
+        .order("created_at", { ascending: false })
+        .limit(500);
       if (search) {
         q = q.or(`full_name.ilike.%${search}%,username.ilike.%${search}%,phone.ilike.%${search}%`);
       }
@@ -18,6 +22,7 @@ export const useSubscribers = (search?: string) =>
 export const usePackages = () =>
   useQuery({
     queryKey: ["packages"],
+    staleTime: 5 * 60_000,
     queryFn: async () => {
       const { data, error } = await supabase.from("packages").select("*").order("price");
       if (error) throw error;
@@ -25,11 +30,15 @@ export const usePackages = () =>
     },
   });
 
-export const useTransactions = () =>
+export const useTransactions = (limit = 200) =>
   useQuery({
-    queryKey: ["transactions"],
+    queryKey: ["transactions", limit],
     queryFn: async () => {
-      const { data, error } = await supabase.from("transactions").select("*").order("created_at", { ascending: false });
+      const { data, error } = await supabase
+        .from("transactions")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(limit);
       if (error) throw error;
       return data;
     },
@@ -39,10 +48,15 @@ export const useActiveSessions = () =>
   useQuery({
     queryKey: ["active_sessions"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("active_sessions").select("*").order("started_at", { ascending: false });
+      const { data, error } = await supabase
+        .from("active_sessions")
+        .select("*")
+        .order("started_at", { ascending: false })
+        .limit(500);
       if (error) throw error;
       return data;
     },
+    refetchInterval: 30_000,
   });
 
 export const useTickets = () =>
@@ -58,6 +72,7 @@ export const useTickets = () =>
 export const useRouters = () =>
   useQuery({
     queryKey: ["routers"],
+    staleTime: 2 * 60_000,
     queryFn: async () => {
       const { data, error } = await supabase.from("routers").select("*, router_interfaces(*)").order("name");
       if (error) throw error;
@@ -79,7 +94,7 @@ export const useErrorLogs = () =>
   useQuery({
     queryKey: ["error_logs"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("error_logs").select("*").order("created_at", { ascending: false });
+      const { data, error } = await supabase.from("error_logs").select("*").order("created_at", { ascending: false }).limit(200);
       if (error) throw error;
       return data;
     },
@@ -167,7 +182,106 @@ export const useAiHealthReports = () =>
     },
   });
 
-// Helper
+// Mutations
+export const useAddSubscriber = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const { error, data: result } = await supabase.from("subscribers").insert(data as any).select().single();
+      if (error) throw error;
+      return result;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["subscribers"] }),
+  });
+};
+
+export const useUpdateSubscriber = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; [key: string]: unknown }) => {
+      const { error } = await supabase.from("subscribers").update(data as any).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["subscribers"] }),
+  });
+};
+
+export const useAddPackage = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const { error, data: result } = await supabase.from("packages").insert(data as any).select().single();
+      if (error) throw error;
+      return result;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["packages"] }),
+  });
+};
+
+export const useUpdatePackage = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; [key: string]: unknown }) => {
+      const { error } = await supabase.from("packages").update(data as any).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["packages"] }),
+  });
+};
+
+export const useAddRouter = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const { error, data: result } = await supabase.from("routers").insert(data as any).select().single();
+      if (error) throw error;
+      return result;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["routers"] }),
+  });
+};
+
+export const useStaff = () =>
+  useQuery({
+    queryKey: ["staff"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("staff" as never).select("*").order("full_name");
+      if (error) return [];
+      return data ?? [];
+    },
+  });
+
+export const useExpenditureCategories = () =>
+  useQuery({
+    queryKey: ["expenditure_categories"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("expenditure_categories" as never).select("*").order("name");
+      if (error) return [];
+      return data ?? [];
+    },
+  });
+
+export const useNotificationTemplates = () =>
+  useQuery({
+    queryKey: ["notification_templates"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("notification_templates" as never).select("*").order("type");
+      if (error) return [];
+      return data ?? [];
+    },
+  });
+
+export const useMpesaConfig = () =>
+  useQuery({
+    queryKey: ["mpesa_config"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("mpesa_config" as never).select("*").limit(1).single();
+      if (error) return null;
+      return data;
+    },
+  });
+
+// Helpers
 export function formatKES(amount: number): string {
   return `KES ${amount.toLocaleString()}`;
 }
