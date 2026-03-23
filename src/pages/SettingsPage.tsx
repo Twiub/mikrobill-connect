@@ -38,30 +38,14 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useBranding } from "@/hooks/useBranding";
 
-const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+// Settings page uses Supabase directly
 
-async function adminApi(method: string, path: string, body?: object) {
-  const token = localStorage.getItem("auth_token") ?? sessionStorage.getItem("auth_token");
-  const res = await fetch(`${API}${path}`, {
-    method,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  return res.json();
-}
-
-// BUG-NEW-R18-D FIX: Read mpesa_config via backend admin API instead of the Supabase
-// frontend client. Migration 232 (v3.18.0) removed the 'authenticated' RLS policy from
-// mpesa_config, restricting it to service_role only. The frontend Supabase client uses
-// SUPABASE_PUBLISHABLE_KEY (anon/authenticated role) which is now blocked by RLS.
-// The backend route GET /api/admin/system-settings/mpesa-config uses the service-role
-// connection and is protected by authenticateUser + requireRole('super_admin').
-const useMpesaConfig = () => useQuery({
+const useMpesaConfigLocal = () => useQuery({
   queryKey: ["mpesa_config"],
   queryFn: async () => {
-    const d = await adminApi("GET", "/admin/system-settings/mpesa-config");
-    if (!d.success) throw new Error(d.error || "Failed to load M-Pesa config");
-    return d.config;
+    const { data, error } = await supabase.from("mpesa_config").select("*").limit(1).maybeSingle();
+    if (error) return null;
+    return data;
   },
 });
 
