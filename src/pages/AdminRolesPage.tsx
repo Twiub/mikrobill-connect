@@ -26,17 +26,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 
-const API = (window as Window & { __MIKROBILL_API__?: string }).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
-
-async function apiFetch(method: string, path: string, body?: object) {
-  const { data: { session } } = await supabase.auth.getSession();
-  const res = await fetch(`${API}${path}`, {
-    method,
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  return res.json();
-}
+// Using Supabase directly instead of external API
 
 const PAGE_CATEGORIES: { label: string; pages: string[] }[] = [
   { label: "📊 Dashboards & Analytics", pages: ["dashboard", "analytics", "ai-health"] },
