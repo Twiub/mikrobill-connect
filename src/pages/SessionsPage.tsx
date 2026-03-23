@@ -45,24 +45,11 @@ const SessionsPage = () => {
   const handleDisconnect = async (session: any) => {
     setDisconnecting(session.id);
     try {
-      const { data: { session: authSession } } = await supabase.auth.getSession();
-      const token = authSession?.access_token;
-      const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
-      const res = await fetch(`${API}/admin/mikrotik/disconnect`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ username: session.username, routerId: session.router_id }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast({ title: "Disconnected", description: `${session.username} has been disconnected.` });
-        refetch();
-      } else {
-        toast({ title: "Error", description: data.error ?? "Disconnect failed.", variant: "destructive" });
-      }
+      // Remove from active_sessions table directly
+      const { error } = await supabase.from("active_sessions").delete().eq("id", session.id);
+      if (error) throw error;
+      toast({ title: "Disconnected", description: `${session.username} has been removed from active sessions.` });
+      refetch();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
