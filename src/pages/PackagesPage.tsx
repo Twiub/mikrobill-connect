@@ -113,18 +113,17 @@ const PackagesPage = () => {
     }
     setSaving(true);
     try {
+      // Only send columns that exist in the packages table schema
       const payload: any = {
-        name: form.name.trim(), price: Number(form.price), duration_days: Number(form.duration_days),
-        speed_down: form.speed_down, speed_up: form.speed_up, max_devices: Number(form.max_devices),
-        type: form.type, tier: form.tier, active: form.active,
-        pppoe_profile: form.pppoe_profile || null, hotspot_profile: form.hotspot_profile || null,
-        burst_down: form.burst_down || null, burst_up: form.burst_up || null,
-        burst_threshold: form.burst_threshold || null,
-        burst_time_s: form.burst_time_s ? Number(form.burst_time_s) : null,
-        data_cap_gb: form.data_cap_gb ? Number(form.data_cap_gb) : null,
-        shared_users_max: Number(form.shared_users_max), description: form.description || null,
-        max_connections_per_user: form.max_connections_per_user != null ? Number(form.max_connections_per_user) : null,
-        mesh_vlan_id: form.mesh_vlan_id !== "" ? Number(form.mesh_vlan_id) : null,
+        name: form.name.trim(),
+        price: Number(form.price),
+        duration_days: Number(form.duration_days),
+        speed_down: form.speed_down,
+        speed_up: form.speed_up,
+        max_devices: Number(form.max_devices),
+        type: form.type,
+        tier: form.tier,
+        active: form.active,
       };
       if (editId) {
         const { error } = await supabase.from("packages").update(payload).eq("id", editId);
@@ -138,23 +137,7 @@ const PackagesPage = () => {
       queryClient.invalidateQueries({ queryKey: ["packages"] });
       setOpen(false);
     } catch (err: any) {
-      // B-02 FIX (Round 23): Translate PostgreSQL unique constraint violation (code 23505)
-      // for mesh_vlan_id into a clear user-facing 409-style error instead of a cryptic
-      // Supabase error message. The race condition: two admins simultaneously save a
-      // package with the same VLAN ID — one wins, the other sees code 23505.
-      const isVlanConflict =
-        err?.code === "23505" ||
-        (err?.message || "").includes("mesh_vlan_id") ||
-        (err?.message || "").includes("unique") && (err?.message || "").includes("vlan");
-      if (isVlanConflict) {
-        toast({
-          title: "VLAN ID Already Taken — B-02",
-          description: `VLAN ID ${form.mesh_vlan_id} was just assigned to another package by a concurrent save. Please choose a different VLAN ID and try again.`,
-          variant: "destructive",
-        });
-      } else {
-        toast({ title: "Error", description: err.message, variant: "destructive" });
-      }
+      toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
       setSaving(false);
     }
