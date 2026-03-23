@@ -207,6 +207,27 @@ export type Database = {
         }
         Relationships: []
       }
+      expenditure_categories: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
       expenditures: {
         Row: {
           added_by: string
@@ -281,6 +302,44 @@ export type Database = {
           },
         ]
       }
+      ip_pool_stats: {
+        Row: {
+          id: string
+          pct_used: number | null
+          pool_name: string
+          recorded_at: string
+          router_id: string | null
+          total_ips: number
+          used_ips: number
+        }
+        Insert: {
+          id?: string
+          pct_used?: number | null
+          pool_name: string
+          recorded_at?: string
+          router_id?: string | null
+          total_ips?: number
+          used_ips?: number
+        }
+        Update: {
+          id?: string
+          pct_used?: number | null
+          pool_name?: string
+          recorded_at?: string
+          router_id?: string | null
+          total_ips?: number
+          used_ips?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ip_pool_stats_router_id_fkey"
+            columns: ["router_id"]
+            isOneToOne: false
+            referencedRelation: "routers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       kyc_records: {
         Row: {
           address: string | null
@@ -333,6 +392,119 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      mpesa_config: {
+        Row: {
+          active: boolean
+          callback_url: string
+          consumer_key: string
+          consumer_secret: string
+          environment: string
+          id: string
+          passkey: string
+          shortcode: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          callback_url?: string
+          consumer_key?: string
+          consumer_secret?: string
+          environment?: string
+          id?: string
+          passkey?: string
+          shortcode?: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          callback_url?: string
+          consumer_key?: string
+          consumer_secret?: string
+          environment?: string
+          id?: string
+          passkey?: string
+          shortcode?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      nas: {
+        Row: {
+          community: string | null
+          created_at: string
+          description: string | null
+          id: string
+          nasname: string
+          ports: number | null
+          router_id: string | null
+          secret: string
+          shortname: string
+          type: string
+        }
+        Insert: {
+          community?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          nasname: string
+          ports?: number | null
+          router_id?: string | null
+          secret?: string
+          shortname: string
+          type?: string
+        }
+        Update: {
+          community?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          nasname?: string
+          ports?: number | null
+          router_id?: string | null
+          secret?: string
+          shortname?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nas_router_id_fkey"
+            columns: ["router_id"]
+            isOneToOne: false
+            referencedRelation: "routers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_templates: {
+        Row: {
+          active: boolean
+          body: string
+          created_at: string
+          id: string
+          title: string
+          type: string
+          variables: string[] | null
+        }
+        Insert: {
+          active?: boolean
+          body: string
+          created_at?: string
+          id?: string
+          title: string
+          type: string
+          variables?: string[] | null
+        }
+        Update: {
+          active?: boolean
+          body?: string
+          created_at?: string
+          id?: string
+          title?: string
+          type?: string
+          variables?: string[] | null
+        }
+        Relationships: []
       }
       notifications: {
         Row: {
@@ -442,6 +614,86 @@ export type Database = {
           full_name?: string | null
           id?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      qos_stats: {
+        Row: {
+          bytes_in: number
+          bytes_out: number
+          drop_rate: number
+          id: string
+          queue_name: string
+          rate_limit: string | null
+          recorded_at: string
+          router_id: string | null
+        }
+        Insert: {
+          bytes_in?: number
+          bytes_out?: number
+          drop_rate?: number
+          id?: string
+          queue_name: string
+          rate_limit?: string | null
+          recorded_at?: string
+          router_id?: string | null
+        }
+        Update: {
+          bytes_in?: number
+          bytes_out?: number
+          drop_rate?: number
+          id?: string
+          queue_name?: string
+          rate_limit?: string | null
+          recorded_at?: string
+          router_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qos_stats_router_id_fkey"
+            columns: ["router_id"]
+            isOneToOne: false
+            referencedRelation: "routers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      radiusdesk_aps: {
+        Row: {
+          connected_users: number
+          id: string
+          last_contact: string | null
+          lat: number | null
+          lng: number | null
+          mac: string
+          name: string
+          rx_bytes: number
+          status: string
+          tx_bytes: number
+        }
+        Insert: {
+          connected_users?: number
+          id?: string
+          last_contact?: string | null
+          lat?: number | null
+          lng?: number | null
+          mac: string
+          name: string
+          rx_bytes?: number
+          status?: string
+          tx_bytes?: number
+        }
+        Update: {
+          connected_users?: number
+          id?: string
+          last_contact?: string | null
+          lat?: number | null
+          lng?: number | null
+          mac?: string
+          name?: string
+          rx_bytes?: number
+          status?: string
+          tx_bytes?: number
         }
         Relationships: []
       }
@@ -568,6 +820,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      staff: {
+        Row: {
+          active: boolean
+          created_at: string
+          email: string | null
+          full_name: string
+          id: string
+          phone: string | null
+          role: string
+          user_id: string | null
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          email?: string | null
+          full_name: string
+          id?: string
+          phone?: string | null
+          role?: string
+          user_id?: string | null
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          email?: string | null
+          full_name?: string
+          id?: string
+          phone?: string | null
+          role?: string
+          user_id?: string | null
+        }
+        Relationships: []
       }
       subscribers: {
         Row: {
@@ -758,6 +1043,30 @@ export type Database = {
           },
         ]
       }
+      user_locations: {
+        Row: {
+          id: string
+          lat: number
+          lng: number
+          recorded_at: string
+          username: string | null
+        }
+        Insert: {
+          id?: string
+          lat: number
+          lng: number
+          recorded_at?: string
+          username?: string | null
+        }
+        Update: {
+          id?: string
+          lat?: number
+          lng?: number
+          recorded_at?: string
+          username?: string | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -782,9 +1091,111 @@ export type Database = {
         }
         Relationships: []
       }
+      voucher_batches: {
+        Row: {
+          batch_id: string
+          batch_label: string
+          created_at: string
+          created_by: string | null
+          expires_at: string | null
+          id: string
+          package_id: string | null
+        }
+        Insert: {
+          batch_id?: string
+          batch_label?: string
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          package_id?: string | null
+        }
+        Update: {
+          batch_id?: string
+          batch_label?: string
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          package_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voucher_batches_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vouchers: {
+        Row: {
+          batch_id: string
+          code: string
+          created_at: string
+          expires_at: string | null
+          id: string
+          redeemed_at: string | null
+          redeemed_by_name: string | null
+          redeemed_by_phone: string | null
+          status: string
+        }
+        Insert: {
+          batch_id: string
+          code: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          redeemed_at?: string | null
+          redeemed_by_name?: string | null
+          redeemed_by_phone?: string | null
+          status?: string
+        }
+        Update: {
+          batch_id?: string
+          code?: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          redeemed_at?: string | null
+          redeemed_by_name?: string | null
+          redeemed_by_phone?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vouchers_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "voucher_batches"
+            referencedColumns: ["batch_id"]
+          },
+        ]
+      }
     }
     Views: {
-      [_ in never]: never
+      v_qos_latest: {
+        Row: {
+          bytes_in: number | null
+          bytes_out: number | null
+          drop_rate: number | null
+          id: string | null
+          queue_name: string | null
+          rate_limit: string | null
+          recorded_at: string | null
+          router_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qos_stats_router_id_fkey"
+            columns: ["router_id"]
+            isOneToOne: false
+            referencedRelation: "routers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       has_role: {
