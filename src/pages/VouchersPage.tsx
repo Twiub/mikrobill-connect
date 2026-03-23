@@ -1,13 +1,13 @@
 // @ts-nocheck
-import { useDebounce } from "@/hooks/useDebounce";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { usePackages } from "@/hooks/useDatabase";
+import { usePackages, formatKES } from "@/hooks/useDatabase";
+import { useDebounce } from "@/hooks/useDebounce";
 import {
-  Ticket, Plus, Ban, ChevronDown, ChevronRight, Copy, Download,
-  CheckCircle2, XCircle, Clock, RefreshCw, Search, Loader2, AlertTriangle,
+  Ticket, Plus, Ban, ChevronRight, Copy, Download,
+  CheckCircle2, XCircle, Clock, RefreshCw, Search, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,48 +16,12 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-interface Batch {
-  batch_id: string;
-  batch_label: string;
-  created_at: string;
-  package_id: string;
-  package_name: string;
-  price: number;
-  duration_days: number;
-  total: number;
-  active: number;
-  redeemed: number;
-  cancelled: number;
-  expired: number;
-  expires_at: string | null;
-}
-
-interface VoucherCode {
-  id: string;
-  code: string;
-  status: "active" | "redeemed" | "cancelled" | "expired";
-  expires_at: string | null;
-  redeemed_at: string | null;
-  redeemed_by_name: string | null;
-  redeemed_by_phone: string | null;
-  created_at: string;
-}
-
-const API = import.meta.env.VITE_BACKEND_URL ?? "/api";
-
-async function authHeaders() {
-  const { data } = await supabase.auth.getSession();
-  return { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` };
-}
-
-// ── Status pill ───────────────────────────────────────────────────────────────
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
-    active:    { color: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30", icon: <CheckCircle2 className="h-3 w-3" />, label: "Active" },
-    redeemed:  { color: "bg-blue-500/15 text-blue-400 border-blue-500/30",         icon: <Ticket className="h-3 w-3" />,       label: "Redeemed" },
-    cancelled: { color: "bg-red-500/15 text-red-400 border-red-500/30",            icon: <XCircle className="h-3 w-3" />,      label: "Cancelled" },
-    expired:   { color: "bg-amber-500/15 text-amber-400 border-amber-500/30",      icon: <Clock className="h-3 w-3" />,        label: "Expired" },
+    active:    { color: "bg-success/15 text-success border-success/30", icon: <CheckCircle2 className="h-3 w-3" />, label: "Active" },
+    redeemed:  { color: "bg-info/15 text-info border-info/30",         icon: <Ticket className="h-3 w-3" />,       label: "Redeemed" },
+    cancelled: { color: "bg-destructive/15 text-destructive border-destructive/30", icon: <XCircle className="h-3 w-3" />, label: "Cancelled" },
+    expired:   { color: "bg-warning/15 text-warning border-warning/30", icon: <Clock className="h-3 w-3" />,        label: "Expired" },
   };
   const s = map[status] ?? map.active;
   return (
@@ -67,324 +31,146 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-// ── Voucher card design ───────────────────────────────────────────────────────
-function VoucherCard({ voucher, onCopy }: { voucher: VoucherCode; onCopy: (code: string) => void }) {
-  const isActive = voucher.status === "active";
-  return (
-    <div className={`
-      relative overflow-hidden rounded-xl border transition-all
-      ${isActive
-        ? "bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border-primary/30 shadow-lg shadow-primary/5"
-        : "bg-slate-900/50 border-border/40 opacity-60"}
-    `}>
-      {/* Decorative perforated edge */}
-      <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col justify-between py-2 gap-1">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className={`h-1 w-1 rounded-full ${isActive ? "bg-primary/40" : "bg-border/40"}`} />
-        ))}
-      </div>
-      {/* Torn edge simulation */}
-      <div className={`absolute left-5 top-0 bottom-0 w-px border-l-2 border-dashed ${isActive ? "border-primary/20" : "border-border/20"}`} />
-
-      <div className="pl-8 pr-4 py-3 flex items-center justify-between gap-3">
-        {/* Code */}
-        <div className="flex-1 min-w-0">
-          <p className={`font-mono text-base font-bold tracking-widest ${isActive ? "text-foreground" : "text-muted-foreground line-through"}`}>
-            {voucher.code}
-          </p>
-          {voucher.status === "redeemed" && voucher.redeemed_by_name && (
-            <p className="text-xs text-muted-foreground mt-0.5 truncate">
-              Used by {voucher.redeemed_by_name} · {voucher.redeemed_by_phone}
-            </p>
-          )}
-          {voucher.expires_at && isActive && (
-            <p className="text-xs text-amber-400/80 mt-0.5">
-              Expires {new Date(voucher.expires_at).toLocaleDateString()}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <StatusPill status={voucher.status} />
-          {isActive && (
-            <button
-              onClick={() => onCopy(voucher.code)}
-              className="p-1.5 rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
-              title="Copy code"
-            >
-              <Copy className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+function genCode(len = 8): string {
+  const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  return Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
-// ── Batch row ─────────────────────────────────────────────────────────────────
-function BatchRow({ batch, onCancelBatch, onExport }: {
-  batch: Batch;
-  onCancelBatch: (batchId: string, label: string) => void;
-  onExport: (batchId: string, label: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const [codes, setCodes] = useState<VoucherCode[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
-  const debouncedSearch = useDebounce(search, 300);
+export default function VouchersPage() {
+  const [batches, setBatches] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [genOpen, setGenOpen] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
+  const [batchCodes, setBatchCodes] = useState<any[]>([]);
+  const [codesLoading, setCodesLoading] = useState(false);
+  const [codeSearch, setCodeSearch] = useState("");
+  const debouncedCodeSearch = useDebounce(codeSearch, 300);
+  const { data: packages } = usePackages();
   const { toast } = useToast();
 
-  const pct = batch.total > 0 ? Math.round((batch.redeemed / batch.total) * 100) : 0;
+  const [form, setForm] = useState({ packageId: "", count: "10", expiresAt: "", batchLabel: "" });
 
-  const load = async () => {
-    if (codes.length) return;
+  const loadBatches = async () => {
     setLoading(true);
-    try {
-      const h = await authHeaders();
-      const r = await fetch(`${API}/admin/vouchers/${batch.batch_id}`, { headers: h });
-      const d = await r.json();
-      if (d.success) setCodes(d.vouchers);
-    } catch { /* non-fatal */ }
+    const { data: batchRows } = await supabase.from("voucher_batches").select("*, packages(name, price, duration_days)").order("created_at", { ascending: false });
+    if (!batchRows) { setLoading(false); return; }
+
+    // Get voucher counts per batch
+    const { data: vouchers } = await supabase.from("vouchers").select("batch_id, status");
+    const countMap: Record<string, { total: number; active: number; redeemed: number; cancelled: number; expired: number }> = {};
+    (vouchers ?? []).forEach((v: any) => {
+      if (!countMap[v.batch_id]) countMap[v.batch_id] = { total: 0, active: 0, redeemed: 0, cancelled: 0, expired: 0 };
+      countMap[v.batch_id].total++;
+      if (v.status in countMap[v.batch_id]) countMap[v.batch_id][v.status]++;
+    });
+
+    const enriched = batchRows.map((b: any) => ({
+      ...b,
+      package_name: b.packages?.name ?? "Unknown",
+      price: b.packages?.price ?? 0,
+      duration_days: b.packages?.duration_days ?? 0,
+      ...(countMap[b.batch_id] ?? { total: 0, active: 0, redeemed: 0, cancelled: 0, expired: 0 }),
+    }));
+    setBatches(enriched);
     setLoading(false);
   };
 
-  const toggle = () => { setExpanded(v => !v); if (!expanded) load(); };
+  useEffect(() => { loadBatches(); }, []);
+
+  const loadCodes = async (batchId: string) => {
+    setCodesLoading(true);
+    const { data } = await supabase.from("vouchers").select("*").eq("batch_id", batchId).order("created_at");
+    setBatchCodes(data ?? []);
+    setCodesLoading(false);
+  };
+
+  const toggleBatch = (batchId: string) => {
+    if (expandedBatch === batchId) {
+      setExpandedBatch(null);
+      setBatchCodes([]);
+      setCodeSearch("");
+    } else {
+      setExpandedBatch(batchId);
+      loadCodes(batchId);
+    }
+  };
+
+  const handleGenerate = async () => {
+    if (!form.packageId || !form.count) return;
+    setGenerating(true);
+    try {
+      const count = parseInt(form.count);
+      const batchId = crypto.randomUUID();
+      // Create batch
+      const { error: batchErr } = await supabase.from("voucher_batches").insert({
+        batch_id: batchId,
+        batch_label: form.batchLabel || `Batch ${new Date().toLocaleDateString()}`,
+        package_id: form.packageId,
+        expires_at: form.expiresAt || null,
+      });
+      if (batchErr) throw batchErr;
+
+      // Generate codes
+      const codes = Array.from({ length: count }, () => ({
+        batch_id: batchId,
+        code: genCode(),
+        status: "active",
+        expires_at: form.expiresAt || null,
+      }));
+      const { error: codesErr } = await supabase.from("vouchers").insert(codes);
+      if (codesErr) throw codesErr;
+
+      toast({ title: "✅ Vouchers generated", description: `${count} codes created.` });
+      setGenOpen(false);
+      setForm({ packageId: "", count: "10", expiresAt: "", batchLabel: "" });
+      loadBatches();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+    setGenerating(false);
+  };
+
+  const cancelBatch = async (batchId: string) => {
+    const { error } = await supabase.from("vouchers").update({ status: "cancelled" }).eq("batch_id", batchId).eq("status", "active");
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Batch cancelled" });
+      loadBatches();
+      if (expandedBatch === batchId) loadCodes(batchId);
+    }
+  };
+
+  const handleExport = async (batchId: string, label: string) => {
+    const { data } = await supabase.from("vouchers").select("code, status, expires_at").eq("batch_id", batchId).eq("status", "active");
+    if (!data) return;
+    const csv = ["Code,Status,Expires"].concat(data.map((v: any) => `${v.code},${v.status},${v.expires_at ?? ""}`)).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `vouchers-${label.replace(/\s+/g, "-")}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const copyCode = (code: string) => {
     navigator.clipboard.writeText(code).catch(() => {});
     toast({ title: "Copied!", description: code });
   };
 
-  const filtered = search
-    ? codes.filter(c => c.code.includes(search.toUpperCase()) || c.status.includes(debouncedSearch.toLowerCase()))
-    : codes;
+  const filteredCodes = useMemo(() => {
+    if (!debouncedCodeSearch) return batchCodes;
+    const q = debouncedCodeSearch.toLowerCase();
+    return batchCodes.filter((c: any) => c.code.toLowerCase().includes(q) || c.status.includes(q));
+  }, [batchCodes, debouncedCodeSearch]);
 
-  return (
-    <div className="rounded-2xl border border-border/60 overflow-hidden bg-card/50 backdrop-blur-sm">
-      {/* Batch header */}
-      <button
-        onClick={toggle}
-        className="w-full flex items-center gap-4 px-5 py-4 hover:bg-muted/30 transition-colors text-left"
-      >
-        <div className={`transition-transform ${expanded ? "rotate-90" : ""}`}>
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        </div>
-
-        {/* Package badge */}
-        <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
-          <Ticket className="h-5 w-5 text-primary" />
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-sm text-foreground truncate">{batch.package_name}</span>
-            {batch.batch_label && (
-              <span className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full border border-border/50">
-                {batch.batch_label}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-            <span>KES {Number(batch.price).toLocaleString()}</span>
-            <span>·</span>
-            <span>{batch.duration_days}d</span>
-            <span>·</span>
-            <span>{new Date(batch.created_at).toLocaleDateString()}</span>
-            {batch.expires_at && <><span>·</span><span className="text-amber-400">Exp {new Date(batch.expires_at).toLocaleDateString()}</span></>}
-          </div>
-        </div>
-
-        {/* Stats */}
-        <div className="flex items-center gap-5 shrink-0">
-          <div className="hidden sm:flex flex-col items-center gap-0.5">
-            <span className="text-lg font-bold text-foreground">{batch.total}</span>
-            <span className="text-xs text-muted-foreground">Total</span>
-          </div>
-          <div className="hidden sm:flex flex-col items-center gap-0.5">
-            <span className="text-lg font-bold text-emerald-400">{batch.active}</span>
-            <span className="text-xs text-muted-foreground">Active</span>
-          </div>
-          <div className="hidden sm:flex flex-col items-center gap-0.5">
-            <span className="text-lg font-bold text-blue-400">{batch.redeemed}</span>
-            <span className="text-xs text-muted-foreground">Used</span>
-          </div>
-
-          {/* Usage bar */}
-          <div className="hidden md:flex flex-col gap-1 w-20">
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Used</span><span>{pct}%</span>
-            </div>
-            <div className="h-1.5 rounded-full bg-muted/50 overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-primary to-blue-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
-            </div>
-          </div>
-
-          {batch.active > 0 && (
-            <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-              <button
-                onClick={() => onExport(batch.batch_id, batch.batch_label || batch.package_name)}
-                className="p-2 rounded-lg hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
-                title="Export CSV"
-              >
-                <Download className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => onCancelBatch(batch.batch_id, batch.batch_label || batch.package_name)}
-                className="p-2 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors"
-                title="Cancel all active"
-              >
-                <Ban className="h-4 w-4" />
-              </button>
-            </div>
-          )}
-        </div>
-      </button>
-
-      {/* Expanded codes */}
-      {expanded && (
-        <div className="border-t border-border/50 px-5 py-4 space-y-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <input
-              placeholder="Filter codes…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-2 text-sm bg-muted/30 border border-border/50 rounded-lg outline-none focus:border-primary/50 transition-colors"
-            />
-          </div>
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {filtered.map(v => <VoucherCard key={v.id} voucher={v} onCopy={copyCode} />)}
-            </div>
-          )}
-          {!loading && filtered.length === 0 && (
-            <p className="text-center text-sm text-muted-foreground py-6">No codes match your filter</p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Main Page ─────────────────────────────────────────────────────────────────
-export default function VouchersPage() {
-  const [batches, setBatches] = useState<Batch[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [genOpen, setGenOpen] = useState(false);
-  const [cancelOpen, setCancelOpen] = useState<{ batchId: string; label: string } | null>(null);
-  const [generating, setGenerating] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
-  const { data: packages } = usePackages();
-  const { toast } = useToast();
-
-  const [form, setForm] = useState({
-    packageId: "",
-    count: "10",
-    expiresAt: "",
-    batchLabel: "",
-  });
-
-  const loadBatches = async () => {
-    setLoading(true);
-    try {
-      const h = await authHeaders();
-      const r = await fetch(`${API}/admin/vouchers`, { headers: h });
-      const d = await r.json();
-      if (d.success) setBatches(d.batches);
-    } catch {
-      toast({ title: "Error", description: "Failed to load vouchers", variant: "destructive" });
-    }
-    setLoading(false);
-  };
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadBatches(); }, []);
-
-  const handleGenerate = async () => {
-    if (!form.packageId || !form.count) return;
-    setGenerating(true);
-    try {
-      const h = await authHeaders();
-      const r = await fetch(`${API}/admin/vouchers/generate`, {
-        method: "POST", headers: h,
-        body: JSON.stringify({
-          packageId: form.packageId,
-          count: parseInt(form.count),
-          expiresAt: form.expiresAt || null,
-          batchLabel: form.batchLabel || null,
-        }),
-      });
-      const d = await r.json();
-      if (d.success) {
-        toast({ title: "✅ Vouchers generated", description: `${d.count} codes created for ${d.package.name}` });
-        setGenOpen(false);
-        setForm({ packageId: "", count: "10", expiresAt: "", batchLabel: "" });
-        loadBatches();
-      } else {
-        toast({ title: "Error", description: d.error, variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Error", description: "Network error", variant: "destructive" });
-    }
-    setGenerating(false);
-  };
-
-  const handleCancelBatch = async () => {
-    if (!cancelOpen) return;
-    setCancelling(true);
-    try {
-      const h = await authHeaders();
-      const r = await fetch(`${API}/admin/vouchers/cancel-batch`, {
-        method: "POST", headers: h,
-        body: JSON.stringify({ batchId: cancelOpen.batchId }),
-      });
-      const d = await r.json();
-      if (d.success) {
-        toast({ title: "Batch cancelled", description: `${d.cancelled} codes cancelled` });
-        setCancelOpen(null);
-        loadBatches();
-      } else {
-        toast({ title: "Error", description: d.error, variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Error", description: "Network error", variant: "destructive" });
-    }
-    setCancelling(false);
-  };
-
-  const handleExport = async (batchId: string, label: string) => {
-    try {
-      const h = await authHeaders();
-      const r = await fetch(`${API}/admin/vouchers/${batchId}`, { headers: h });
-      const d = await r.json();
-      if (!d.success) return;
-      const active = d.vouchers.filter((v: VoucherCode) => v.status === "active");
-      const csv = ["Code,Status,Expires"].concat(
-        active.map((v: VoucherCode) => `${v.code},${v.status},${v.expires_at ?? ""}`)
-      ).join("\n");
-      const blob = new Blob([csv], { type: "text/csv" });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement("a");
-      a.href = url; a.download = `vouchers-${label.replace(/\s+/g, "-")}.csv`; a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      toast({ title: "Export failed", variant: "destructive" });
-    }
-  };
-
-  // Summary stats
-  const totalActive   = batches.reduce((s, b) => s + Number(b.active), 0);
-  const totalRedeemed = batches.reduce((s, b) => s + Number(b.redeemed), 0);
-  const totalAll      = batches.reduce((s, b) => s + Number(b.total), 0);
+  const totalActive = batches.reduce((s, b) => s + Number(b.active ?? 0), 0);
+  const totalRedeemed = batches.reduce((s, b) => s + Number(b.redeemed ?? 0), 0);
+  const totalAll = batches.reduce((s, b) => s + Number(b.total ?? 0), 0);
 
   return (
     <AdminLayout>
       <div className="max-w-6xl mx-auto space-y-6 p-6">
-
-        {/* ── Header ── */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
@@ -405,146 +191,160 @@ export default function VouchersPage() {
           </div>
         </div>
 
-        {/* ── Summary cards ── */}
+        {/* Summary */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[
-            { label: "Total Generated", value: totalAll,      color: "text-foreground" },
-            { label: "Active / Unused",  value: totalActive,  color: "text-emerald-400" },
-            { label: "Redeemed",         value: totalRedeemed, color: "text-blue-400" },
-          ].map(({ label, value, color }) => (
-            <div key={label} className="rounded-xl border border-border/60 bg-card/50 p-4 text-center">
-              <p className={`text-2xl font-extrabold ${color}`}>{value.toLocaleString()}</p>
-              <p className="text-xs text-muted-foreground mt-1">{label}</p>
+            { label: "Total Generated", value: totalAll, color: "text-foreground" },
+            { label: "Active / Unused", value: totalActive, color: "text-success" },
+            { label: "Redeemed", value: totalRedeemed, color: "text-info" },
+          ].map(s => (
+            <div key={s.label} className="glass-card p-4 text-center">
+              <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+              <p className="text-xs text-muted-foreground mt-1">{s.label}</p>
             </div>
           ))}
         </div>
 
-        {/* ── Batch list ── */}
+        {/* Batches */}
         {loading ? (
-          <div className="flex items-center justify-center py-20">
+          <div className="flex items-center justify-center py-12">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : batches.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border/60 py-20 text-center space-y-3">
-            <Ticket className="h-10 w-10 text-muted-foreground/40 mx-auto" />
-            <p className="text-muted-foreground text-sm">No voucher batches yet</p>
-            <Button size="sm" onClick={() => setGenOpen(true)}>
-              <Plus className="h-3.5 w-3.5 mr-1.5" />Generate your first batch
-            </Button>
+          <div className="glass-card p-12 text-center">
+            <Ticket className="h-10 w-10 mx-auto mb-3 opacity-20" />
+            <p className="text-sm font-medium text-muted-foreground">No voucher batches yet</p>
+            <p className="text-xs text-muted-foreground mt-1">Click "Generate Vouchers" to create your first batch</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {batches.map(b => (
-              <BatchRow
-                key={b.batch_id}
-                batch={b}
-                onCancelBatch={(id, label) => setCancelOpen({ batchId: id, label })}
-                onExport={handleExport}
-              />
-            ))}
+            {batches.map((batch: any) => {
+              const pct = batch.total > 0 ? Math.round((batch.redeemed / batch.total) * 100) : 0;
+              const isExpanded = expandedBatch === batch.batch_id;
+              return (
+                <div key={batch.batch_id} className="rounded-2xl border border-border/60 overflow-hidden bg-card/50 backdrop-blur-sm">
+                  <button onClick={() => toggleBatch(batch.batch_id)} className="w-full flex items-center gap-4 px-5 py-4 hover:bg-muted/30 transition-colors text-left">
+                    <div className={`transition-transform ${isExpanded ? "rotate-90" : ""}`}>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+                      <Ticket className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm text-foreground truncate">{batch.package_name}</span>
+                        {batch.batch_label && <span className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full border border-border/50">{batch.batch_label}</span>}
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                        <span>{formatKES(Number(batch.price))}</span>
+                        <span>·</span>
+                        <span>{batch.duration_days}d</span>
+                        <span>·</span>
+                        <span>{new Date(batch.created_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-5 shrink-0">
+                      <div className="hidden sm:flex flex-col items-center gap-0.5">
+                        <span className="text-lg font-bold text-foreground">{batch.total}</span>
+                        <span className="text-xs text-muted-foreground">Total</span>
+                      </div>
+                      <div className="hidden sm:flex flex-col items-center gap-0.5">
+                        <span className="text-lg font-bold text-success">{batch.active}</span>
+                        <span className="text-xs text-muted-foreground">Active</span>
+                      </div>
+                      <div className="hidden md:flex flex-col gap-1 w-20">
+                        <div className="flex justify-between text-xs text-muted-foreground"><span>Used</span><span>{pct}%</span></div>
+                        <div className="h-1.5 rounded-full bg-muted/50 overflow-hidden">
+                          <div className="h-full bg-gradient-to-r from-primary to-info rounded-full transition-all" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Actions row */}
+                  {batch.active > 0 && (
+                    <div className="flex gap-2 px-5 pb-3" onClick={e => e.stopPropagation()}>
+                      <Button variant="ghost" size="sm" onClick={() => handleExport(batch.batch_id, batch.batch_label || batch.package_name)}>
+                        <Download className="h-3.5 w-3.5 mr-1" />Export CSV
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => cancelBatch(batch.batch_id)}>
+                        <Ban className="h-3.5 w-3.5 mr-1" />Cancel Active
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Expanded codes */}
+                  {isExpanded && (
+                    <div className="border-t border-border/50 px-5 py-4 space-y-3">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                        <Input placeholder="Filter codes…" value={codeSearch} onChange={e => setCodeSearch(e.target.value)} className="pl-8 h-9 text-sm" />
+                      </div>
+                      {codesLoading ? (
+                        <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+                      ) : (
+                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                          {filteredCodes.map((v: any) => (
+                            <div key={v.id} className={`rounded-xl border p-3 flex items-center justify-between gap-3 ${v.status === "active" ? "border-primary/30 bg-card" : "border-border/40 opacity-60"}`}>
+                              <div className="min-w-0">
+                                <p className={`font-mono text-base font-bold tracking-widest ${v.status !== "active" ? "line-through text-muted-foreground" : "text-foreground"}`}>{v.code}</p>
+                                {v.status === "redeemed" && v.redeemed_by_name && <p className="text-xs text-muted-foreground mt-0.5 truncate">Used by {v.redeemed_by_name}</p>}
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <StatusPill status={v.status} />
+                                {v.status === "active" && (
+                                  <button onClick={() => copyCode(v.code)} className="p-1.5 rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors" title="Copy code">
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {!codesLoading && filteredCodes.length === 0 && <p className="text-center text-sm text-muted-foreground py-6">No codes match your filter</p>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* ── Generate dialog ── */}
+      {/* Generate dialog */}
       <Dialog open={genOpen} onOpenChange={setGenOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Ticket className="h-4 w-4 text-primary" />Generate Vouchers
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
+          <DialogHeader><DialogTitle>Generate Vouchers</DialogTitle></DialogHeader>
+          <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>Package</Label>
+              <Label>Package *</Label>
               <Select value={form.packageId} onValueChange={v => setForm(f => ({ ...f, packageId: v }))}>
-                <SelectTrigger><SelectValue placeholder="Select a package" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Select package" /></SelectTrigger>
                 <SelectContent>
-                  {(packages ?? []).filter((p: any) => p.is_active !== false).map((p: any) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name} — KES {Number(p.price).toLocaleString()} · {p.duration_days}d
-                    </SelectItem>
+                  {(packages as any[] ?? []).map((p: any) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name} — {formatKES(p.price)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-
             <div className="space-y-1.5">
-              <Label>Number of codes</Label>
-              <Input
-                type="number" min="1" max="500"
-                value={form.count}
-                onChange={e => setForm(f => ({ ...f, count: e.target.value }))}
-                placeholder="10"
-              />
-              <p className="text-xs text-muted-foreground">Max 500 per batch</p>
+              <Label>Number of Codes</Label>
+              <Input type="number" min="1" max="500" value={form.count} onChange={e => setForm(f => ({ ...f, count: e.target.value }))} />
             </div>
-
             <div className="space-y-1.5">
-              <Label>Batch label <span className="text-muted-foreground">(optional)</span></Label>
-              <Input
-                value={form.batchLabel}
-                onChange={e => setForm(f => ({ ...f, batchLabel: e.target.value }))}
-                placeholder="e.g. March promo · School batch 1"
-                maxLength={100}
-              />
+              <Label>Batch Label</Label>
+              <Input placeholder="e.g. Q1 Promos" value={form.batchLabel} onChange={e => setForm(f => ({ ...f, batchLabel: e.target.value }))} />
             </div>
-
             <div className="space-y-1.5">
-              <Label>Expiry date <span className="text-muted-foreground">(optional)</span></Label>
-              <Input
-                type="date"
-                value={form.expiresAt}
-                onChange={e => setForm(f => ({ ...f, expiresAt: e.target.value }))}
-                min={new Date().toISOString().split("T")[0]}
-              />
-              <p className="text-xs text-muted-foreground">Leave blank for no expiry</p>
+              <Label>Expires At (optional)</Label>
+              <Input type="date" value={form.expiresAt} onChange={e => setForm(f => ({ ...f, expiresAt: e.target.value }))} />
             </div>
-
-            {/* Preview */}
-            {form.packageId && form.count && (
-              <div className="rounded-xl bg-primary/5 border border-primary/20 p-4 space-y-1">
-                <p className="text-xs font-semibold text-primary">Preview</p>
-                <p className="text-sm text-foreground">
-                  {form.count} × <span className="font-semibold">
-                    {(packages ?? []).find((p: any) => p.id === form.packageId)?.name}
-                  </span> vouchers
-                </p>
-                <p className="text-xs text-muted-foreground font-mono">Format: XXXX-XXXX-XXXX</p>
-              </div>
-            )}
           </div>
-
           <DialogFooter>
             <Button variant="outline" onClick={() => setGenOpen(false)}>Cancel</Button>
-            <Button
-              onClick={handleGenerate}
-              disabled={generating || !form.packageId || !form.count}
-            >
-              {generating ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Generating…</> : "Generate"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Cancel batch confirm ── */}
-      <Dialog open={!!cancelOpen} onOpenChange={() => setCancelOpen(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-400">
-              <AlertTriangle className="h-4 w-4" />Cancel Batch
-            </DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground py-2">
-            Cancel all active vouchers in batch <span className="font-semibold text-foreground">"{cancelOpen?.label}"</span>?
-            This cannot be undone. Redeemed codes are unaffected.
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelOpen(null)}>Keep</Button>
-            <Button variant="destructive" onClick={handleCancelBatch} disabled={cancelling}>
-              {cancelling ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
-              Cancel All Active
+            <Button onClick={handleGenerate} disabled={generating || !form.packageId}>
+              {generating && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Generate
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -106,53 +106,27 @@ const UsersPage = () => {
     }
     setSaving(true);
     try {
-      // HIGH-01 FIX v3.19.0: Route through backend API instead of writing directly
-      // to Supabase. Direct Supabase writes stored pppoe_password as PLAINTEXT and
-      // never generated portal_password_hash or nt_password — PPPoE subscribers
-      // created via the admin UI could not authenticate via RADIUS (MSCHAPv2).
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
-
       const payload: any = {
         full_name: form.full_name.trim(),
         phone: form.phone.trim(),
         username: form.username.trim(),
         type: form.type,
         package_id: form.package_id || null,
-        router_id: form.router_id || null,
         status: form.status,
-        pppoe_username: form.pppoe_username || null,
-        hotspot_enabled: form.hotspot_enabled,
-        hotspot_package_ids: form.hotspot_package_ids.length ? form.hotspot_package_ids : null,
         mac_binding: form.mac_binding || null,
         static_ip: form.static_ip || null,
         kyc_verified: form.kyc_verified,
       };
-      // Only send password if it was entered (backend ignores absent field on update)
-      if (form.pppoe_password) payload.pppoe_password = form.pppoe_password;
 
-      const url    = editId ? `${API}/admin/subscribers/${editId}` : `${API}/admin/subscribers`;
-      const method = editId ? "PATCH" : "POST";
-
-      const res  = await fetch(url, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        throw new Error(data.error ?? data.errors?.[0]?.msg ?? "Save failed");
+      if (editId) {
+        const { error } = await supabase.from("subscribers").update(payload).eq("id", editId);
+        if (error) throw error;
+        toast({ title: "Subscriber Updated", description: `${form.full_name} saved successfully.` });
+      } else {
+        const { error } = await supabase.from("subscribers").insert(payload);
+        if (error) throw error;
+        toast({ title: "Subscriber Added", description: `${form.full_name} created successfully.` });
       }
-
-      toast({
-        title: editId ? "Subscriber Updated" : "Subscriber Added",
-        description: `${form.full_name} ${editId ? "saved" : "created"} successfully.`,
-      });
       queryClient.invalidateQueries({ queryKey: ["subscribers"] });
       setOpen(false);
     } catch (err: any) {

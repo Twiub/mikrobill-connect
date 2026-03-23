@@ -113,18 +113,17 @@ const PackagesPage = () => {
     }
     setSaving(true);
     try {
+      // Only send columns that exist in the packages table schema
       const payload: any = {
-        name: form.name.trim(), price: Number(form.price), duration_days: Number(form.duration_days),
-        speed_down: form.speed_down, speed_up: form.speed_up, max_devices: Number(form.max_devices),
-        type: form.type, tier: form.tier, active: form.active,
-        pppoe_profile: form.pppoe_profile || null, hotspot_profile: form.hotspot_profile || null,
-        burst_down: form.burst_down || null, burst_up: form.burst_up || null,
-        burst_threshold: form.burst_threshold || null,
-        burst_time_s: form.burst_time_s ? Number(form.burst_time_s) : null,
-        data_cap_gb: form.data_cap_gb ? Number(form.data_cap_gb) : null,
-        shared_users_max: Number(form.shared_users_max), description: form.description || null,
-        max_connections_per_user: form.max_connections_per_user != null ? Number(form.max_connections_per_user) : null,
-        mesh_vlan_id: form.mesh_vlan_id !== "" ? Number(form.mesh_vlan_id) : null,
+        name: form.name.trim(),
+        price: Number(form.price),
+        duration_days: Number(form.duration_days),
+        speed_down: form.speed_down,
+        speed_up: form.speed_up,
+        max_devices: Number(form.max_devices),
+        type: form.type,
+        tier: form.tier,
+        active: form.active,
       };
       if (editId) {
         const { error } = await supabase.from("packages").update(payload).eq("id", editId);
@@ -138,49 +137,14 @@ const PackagesPage = () => {
       queryClient.invalidateQueries({ queryKey: ["packages"] });
       setOpen(false);
     } catch (err: any) {
-      // B-02 FIX (Round 23): Translate PostgreSQL unique constraint violation (code 23505)
-      // for mesh_vlan_id into a clear user-facing 409-style error instead of a cryptic
-      // Supabase error message. The race condition: two admins simultaneously save a
-      // package with the same VLAN ID — one wins, the other sees code 23505.
-      const isVlanConflict =
-        err?.code === "23505" ||
-        (err?.message || "").includes("mesh_vlan_id") ||
-        (err?.message || "").includes("unique") && (err?.message || "").includes("vlan");
-      if (isVlanConflict) {
-        toast({
-          title: "VLAN ID Already Taken — B-02",
-          description: `VLAN ID ${form.mesh_vlan_id} was just assigned to another package by a concurrent save. Please choose a different VLAN ID and try again.`,
-          variant: "destructive",
-        });
-      } else {
-        toast({ title: "Error", description: err.message, variant: "destructive" });
-      }
+      toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
       setSaving(false);
     }
   };
 
   const toggleActive = async (pkg: any) => {
-    // BUG-S2-003 FIX v3.19.1: Direct supabase.from("packages").update() bypasses the backend
-    // and the packages.active ↔ is_active sync trigger may not fire reliably via PostgREST
-    // (RLS policies can intercept before triggers on some Supabase configurations).
-    // Route through the admin backend so the trigger fires on the correct connection.
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
-      await fetch(`${API}/admin/packages/${pkg.id}/toggle-active`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ active: !pkg.active }),
-      });
-    } catch (_) {
-      // Fallback: direct Supabase write (trigger should still fire on standard Supabase)
-      await supabase.from("packages").update({ active: !pkg.active }).eq("id", pkg.id);
-    }
+    await supabase.from("packages").update({ active: !pkg.active }).eq("id", pkg.id);
     queryClient.invalidateQueries({ queryKey: ["packages"] });
   };
 

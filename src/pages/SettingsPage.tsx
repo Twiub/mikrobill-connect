@@ -38,30 +38,14 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useBranding } from "@/hooks/useBranding";
 
-const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+// Settings page uses Supabase directly
 
-async function adminApi(method: string, path: string, body?: object) {
-  const token = localStorage.getItem("auth_token") ?? sessionStorage.getItem("auth_token");
-  const res = await fetch(`${API}${path}`, {
-    method,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  return res.json();
-}
-
-// BUG-NEW-R18-D FIX: Read mpesa_config via backend admin API instead of the Supabase
-// frontend client. Migration 232 (v3.18.0) removed the 'authenticated' RLS policy from
-// mpesa_config, restricting it to service_role only. The frontend Supabase client uses
-// SUPABASE_PUBLISHABLE_KEY (anon/authenticated role) which is now blocked by RLS.
-// The backend route GET /api/admin/system-settings/mpesa-config uses the service-role
-// connection and is protected by authenticateUser + requireRole('super_admin').
-const useMpesaConfig = () => useQuery({
+const useMpesaConfigLocal = () => useQuery({
   queryKey: ["mpesa_config"],
   queryFn: async () => {
-    const d = await adminApi("GET", "/admin/system-settings/mpesa-config");
-    if (!d.success) throw new Error(d.error || "Failed to load M-Pesa config");
-    return d.config;
+    const { data, error } = await supabase.from("mpesa_config").select("*").limit(1).maybeSingle();
+    if (error) return null;
+    return data;
   },
 });
 
@@ -140,7 +124,7 @@ const SaveRow = ({ section, saving, sysLoading, onSave }: {
 
 const SettingsPage = () => {
   const { branding: brandingData } = useBranding();
-  const { data: mpesaCfg, isLoading: mpesaLoading } = useMpesaConfig();
+  const { data: mpesaCfg, isLoading: mpesaLoading } = useMpesaConfigLocal();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -216,43 +200,22 @@ const SettingsPage = () => {
   }, [mpesaCfg]);
 
   useEffect(() => {
-    adminApi("GET", "/admin/system-settings")
-      .then(d => {
-        if (!d.success) return;
-        const s = d.settings;
-        setRadius({ radius_server_ip: s.radius_server_ip ?? "127.0.0.1", radius_secret: s.radius_secret ?? "", radius_host: s.radius_host ?? "127.0.0.1" });
-        setUam({ portal_uam_url: s.portal_uam_url ?? "", portal_uam_secret: s.portal_uam_secret ?? "greatsecret" });
-        setMesh({
-          meshdesk_dead_after:       s.meshdesk_dead_after       ?? "600",
-          meshdesk_report_proto:     s.meshdesk_report_proto     ?? "http",
-          meshdesk_report_light:     s.meshdesk_report_light     ?? "120",
-          meshdesk_report_full:      s.meshdesk_report_full      ?? "300",
-          meshdesk_report_sampling:  s.meshdesk_report_sampling  ?? "0",
-          stale_action_timeout_secs: s.stale_action_timeout_secs ?? "300",
-        });
-        setMaps({ google_maps_api_key: s.google_maps_api_key ?? "" });
-        setSms({
-          sms_provider:          s.sms_provider          ?? "africastalking",
-          sms_api_key:           s.sms_api_key           ?? "",
-          sms_username:          s.sms_username          ?? "sandbox",
-          sms_sender_id:         s.sms_sender_id         ?? "",
-          android_gw_username:      s.android_gw_username      ?? "",
-          android_gw_password:      s.android_gw_password      ?? "",
-          android_gw_device_id:     s.android_gw_device_id     ?? "",
-          android_gw_webhook_secret: s.android_gw_webhook_secret ?? "",
-        });
-        setFcm({ fcm_server_key: s.fcm_server_key ?? "", fcm_project_id: s.fcm_project_id ?? "" });
-        setDlna({ dlna_enabled: s.dlna_enabled ?? "true", dlna_server_ip: s.dlna_server_ip ?? "192.168.88.200", dlna_http_port: s.dlna_http_port ?? "8200" });
-        setTax({ tax_vat_rate: s.tax_vat_rate ?? "16", tax_kra_pin: s.tax_kra_pin ?? "" });
-        setFwa({
-          free_whatsapp_enabled:        s.free_whatsapp_enabled        ?? "true",
-          free_whatsapp_window_days:    s.free_whatsapp_window_days    ?? "3",
-          free_whatsapp_daily_cap_mb:   s.free_whatsapp_daily_cap_mb   ?? "100",
-          free_whatsapp_speed_down:     s.free_whatsapp_speed_down     ?? "1M",
-          free_whatsapp_speed_up:       s.free_whatsapp_speed_up       ?? "512k",
-          free_whatsapp_extend_days:    s.free_whatsapp_extend_days    ?? "3",
-          free_whatsapp_otp_ttl_seconds: s.free_whatsapp_otp_ttl_seconds ?? "300",
-        });
+    // Load system settings from Supabase
+    supabase.from("system_settings").select("key, value")
+      .then(({ data: rows }) => {
+        if (!rows) return;
+        const s: Record<string, any> = {};
+        rows.forEach((r: any) => { s[r.key] = typeof r.value === 'object' ? r.value : r.value; });
+        // Merge settings into state
+        if (s.radius) setRadius(prev => ({ ...prev, ...s.radius }));
+        if (s.uam) setUam(prev => ({ ...prev, ...s.uam }));
+        if (s.mesh) setMesh(prev => ({ ...prev, ...s.mesh }));
+        if (s.maps) setMaps(prev => ({ ...prev, ...s.maps }));
+        if (s.sms) setSms(prev => ({ ...prev, ...s.sms }));
+        if (s.fcm) setFcm(prev => ({ ...prev, ...s.fcm }));
+        if (s.dlna) setDlna(prev => ({ ...prev, ...s.dlna }));
+        if (s.tax) setTax(prev => ({ ...prev, ...s.tax }));
+        if (s.free_whatsapp) setFwa(prev => ({ ...prev, ...s.free_whatsapp }));
       })
       .catch(() => toast({ title: "Failed to load settings", variant: "destructive" }))
       .finally(() => setSysLoading(false));
@@ -266,8 +229,17 @@ const SettingsPage = () => {
   const saveMpesa = async () => {
     setSavingSection("mpesa");
     try {
-      const d = await adminApi("PUT", "/admin/system-settings/mpesa-config", mpesa);
-      if (!d.success) throw new Error(d.error || "Save failed");
+      const { error } = await supabase.from("mpesa_config").upsert({
+        id: mpesaCfg?.id ?? undefined,
+        shortcode: mpesa.shortcode,
+        consumer_key: mpesa.consumer_key,
+        consumer_secret: mpesa.consumer_secret,
+        passkey: mpesa.passkey,
+        callback_url: mpesa.stk_callback_url,
+        environment: mpesa.environment,
+        active: true,
+      });
+      if (error) throw error;
       queryClient.invalidateQueries({ queryKey: ["mpesa_config"] });
       toast({ title: "M-Pesa Config Saved ✅" });
     } catch (err: any) {
@@ -278,8 +250,11 @@ const SettingsPage = () => {
   const saveSys = async (section: string, values: Record<string, string>) => {
     setSavingSection(section);
     try {
-      const d = await adminApi("PUT", "/admin/system-settings", values);
-      if (!d.success) throw new Error(d.error ?? "Save failed");
+      const { error } = await supabase.from("system_settings").upsert(
+        { key: section, value: values, updated_at: new Date().toISOString() },
+        { onConflict: "key" }
+      );
+      if (error) throw error;
       toast({ title: `${section} settings saved ✅` });
     } catch (err: any) {
       toast({ title: "Save failed", description: err.message, variant: "destructive" });
