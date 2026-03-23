@@ -200,43 +200,22 @@ const SettingsPage = () => {
   }, [mpesaCfg]);
 
   useEffect(() => {
-    adminApi("GET", "/admin/system-settings")
-      .then(d => {
-        if (!d.success) return;
-        const s = d.settings;
-        setRadius({ radius_server_ip: s.radius_server_ip ?? "127.0.0.1", radius_secret: s.radius_secret ?? "", radius_host: s.radius_host ?? "127.0.0.1" });
-        setUam({ portal_uam_url: s.portal_uam_url ?? "", portal_uam_secret: s.portal_uam_secret ?? "greatsecret" });
-        setMesh({
-          meshdesk_dead_after:       s.meshdesk_dead_after       ?? "600",
-          meshdesk_report_proto:     s.meshdesk_report_proto     ?? "http",
-          meshdesk_report_light:     s.meshdesk_report_light     ?? "120",
-          meshdesk_report_full:      s.meshdesk_report_full      ?? "300",
-          meshdesk_report_sampling:  s.meshdesk_report_sampling  ?? "0",
-          stale_action_timeout_secs: s.stale_action_timeout_secs ?? "300",
-        });
-        setMaps({ google_maps_api_key: s.google_maps_api_key ?? "" });
-        setSms({
-          sms_provider:          s.sms_provider          ?? "africastalking",
-          sms_api_key:           s.sms_api_key           ?? "",
-          sms_username:          s.sms_username          ?? "sandbox",
-          sms_sender_id:         s.sms_sender_id         ?? "",
-          android_gw_username:      s.android_gw_username      ?? "",
-          android_gw_password:      s.android_gw_password      ?? "",
-          android_gw_device_id:     s.android_gw_device_id     ?? "",
-          android_gw_webhook_secret: s.android_gw_webhook_secret ?? "",
-        });
-        setFcm({ fcm_server_key: s.fcm_server_key ?? "", fcm_project_id: s.fcm_project_id ?? "" });
-        setDlna({ dlna_enabled: s.dlna_enabled ?? "true", dlna_server_ip: s.dlna_server_ip ?? "192.168.88.200", dlna_http_port: s.dlna_http_port ?? "8200" });
-        setTax({ tax_vat_rate: s.tax_vat_rate ?? "16", tax_kra_pin: s.tax_kra_pin ?? "" });
-        setFwa({
-          free_whatsapp_enabled:        s.free_whatsapp_enabled        ?? "true",
-          free_whatsapp_window_days:    s.free_whatsapp_window_days    ?? "3",
-          free_whatsapp_daily_cap_mb:   s.free_whatsapp_daily_cap_mb   ?? "100",
-          free_whatsapp_speed_down:     s.free_whatsapp_speed_down     ?? "1M",
-          free_whatsapp_speed_up:       s.free_whatsapp_speed_up       ?? "512k",
-          free_whatsapp_extend_days:    s.free_whatsapp_extend_days    ?? "3",
-          free_whatsapp_otp_ttl_seconds: s.free_whatsapp_otp_ttl_seconds ?? "300",
-        });
+    // Load system settings from Supabase
+    supabase.from("system_settings").select("key, value")
+      .then(({ data: rows }) => {
+        if (!rows) return;
+        const s: Record<string, any> = {};
+        rows.forEach((r: any) => { s[r.key] = typeof r.value === 'object' ? r.value : r.value; });
+        // Merge settings into state
+        if (s.radius) setRadius(prev => ({ ...prev, ...s.radius }));
+        if (s.uam) setUam(prev => ({ ...prev, ...s.uam }));
+        if (s.mesh) setMesh(prev => ({ ...prev, ...s.mesh }));
+        if (s.maps) setMaps(prev => ({ ...prev, ...s.maps }));
+        if (s.sms) setSms(prev => ({ ...prev, ...s.sms }));
+        if (s.fcm) setFcm(prev => ({ ...prev, ...s.fcm }));
+        if (s.dlna) setDlna(prev => ({ ...prev, ...s.dlna }));
+        if (s.tax) setTax(prev => ({ ...prev, ...s.tax }));
+        if (s.free_whatsapp) setFwa(prev => ({ ...prev, ...s.free_whatsapp }));
       })
       .catch(() => toast({ title: "Failed to load settings", variant: "destructive" }))
       .finally(() => setSysLoading(false));
