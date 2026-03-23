@@ -144,26 +144,7 @@ const PackagesPage = () => {
   };
 
   const toggleActive = async (pkg: any) => {
-    // BUG-S2-003 FIX v3.19.1: Direct supabase.from("packages").update() bypasses the backend
-    // and the packages.active ↔ is_active sync trigger may not fire reliably via PostgREST
-    // (RLS policies can intercept before triggers on some Supabase configurations).
-    // Route through the admin backend so the trigger fires on the correct connection.
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
-      await fetch(`${API}/admin/packages/${pkg.id}/toggle-active`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ active: !pkg.active }),
-      });
-    } catch (_) {
-      // Fallback: direct Supabase write (trigger should still fire on standard Supabase)
-      await supabase.from("packages").update({ active: !pkg.active }).eq("id", pkg.id);
-    }
+    await supabase.from("packages").update({ active: !pkg.active }).eq("id", pkg.id);
     queryClient.invalidateQueries({ queryKey: ["packages"] });
   };
 

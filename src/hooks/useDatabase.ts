@@ -245,7 +245,7 @@ export const useStaff = () =>
   useQuery({
     queryKey: ["staff"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("staff" as never).select("*").order("full_name");
+      const { data, error } = await supabase.from("staff").select("*").order("full_name");
       if (error) return [];
       return data ?? [];
     },
@@ -255,7 +255,7 @@ export const useExpenditureCategories = () =>
   useQuery({
     queryKey: ["expenditure_categories"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("expenditure_categories" as never).select("*").order("name");
+      const { data, error } = await supabase.from("expenditure_categories").select("*").order("name");
       if (error) return [];
       return data ?? [];
     },
@@ -265,7 +265,7 @@ export const useNotificationTemplates = () =>
   useQuery({
     queryKey: ["notification_templates"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("notification_templates" as never).select("*").order("type");
+      const { data, error } = await supabase.from("notification_templates").select("*").order("type");
       if (error) return [];
       return data ?? [];
     },
@@ -275,7 +275,7 @@ export const useMpesaConfig = () =>
   useQuery({
     queryKey: ["mpesa_config"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("mpesa_config" as never).select("*").limit(1).single();
+      const { data, error } = await supabase.from("mpesa_config").select("*").limit(1).maybeSingle();
       if (error) return null;
       return data;
     },
