@@ -124,7 +124,7 @@ const SaveRow = ({ section, saving, sysLoading, onSave }: {
 
 const SettingsPage = () => {
   const { branding: brandingData } = useBranding();
-  const { data: mpesaCfg, isLoading: mpesaLoading } = useMpesaConfig();
+  const { data: mpesaCfg, isLoading: mpesaLoading } = useMpesaConfigLocal();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
