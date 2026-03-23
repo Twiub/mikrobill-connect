@@ -229,8 +229,17 @@ const SettingsPage = () => {
   const saveMpesa = async () => {
     setSavingSection("mpesa");
     try {
-      const d = await adminApi("PUT", "/admin/system-settings/mpesa-config", mpesa);
-      if (!d.success) throw new Error(d.error || "Save failed");
+      const { error } = await supabase.from("mpesa_config").upsert({
+        id: mpesaCfg?.id ?? undefined,
+        shortcode: mpesa.shortcode,
+        consumer_key: mpesa.consumer_key,
+        consumer_secret: mpesa.consumer_secret,
+        passkey: mpesa.passkey,
+        callback_url: mpesa.stk_callback_url,
+        environment: mpesa.environment,
+        active: true,
+      });
+      if (error) throw error;
       queryClient.invalidateQueries({ queryKey: ["mpesa_config"] });
       toast({ title: "M-Pesa Config Saved ✅" });
     } catch (err: any) {
@@ -241,8 +250,11 @@ const SettingsPage = () => {
   const saveSys = async (section: string, values: Record<string, string>) => {
     setSavingSection(section);
     try {
-      const d = await adminApi("PUT", "/admin/system-settings", values);
-      if (!d.success) throw new Error(d.error ?? "Save failed");
+      const { error } = await supabase.from("system_settings").upsert(
+        { key: section, value: values, updated_at: new Date().toISOString() },
+        { onConflict: "key" }
+      );
+      if (error) throw error;
       toast({ title: `${section} settings saved ✅` });
     } catch (err: any) {
       toast({ title: "Save failed", description: err.message, variant: "destructive" });
