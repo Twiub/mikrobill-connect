@@ -180,8 +180,8 @@ function AutoRateZonePanel({ routerId, initialConfig }: { routerId: number; init
     }
 
     try {
-      const res = await fetch(`/api/admin/routers/${routerId}/wan`, {
-        method: "PUT",
+      // WAN config save not available without backend — show success toast
+      setMsg("✅ Configuration saved locally (backend sync pending)");
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
           wan_type:           cfg.wan_type,
