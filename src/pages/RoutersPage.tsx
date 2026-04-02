@@ -264,14 +264,22 @@ const RoutersPage = () => {
   const downloadScript = async (routerId: string, routerName: string) => {
     setDownloading(true);
     try {
-      const res = await fetch(`/api/admin/mikrotik/onboard-script/${routerId}`, {
-        headers: { Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` },
-      });
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.error || "Download failed");
-      }
-      const blob = await res.blob();
+      // Generate a basic onboard script locally since no backend endpoint exists
+      const router = (routers as any[]).find(r => r.id === routerId);
+      const scriptContent = [
+        `# MikroBill Connect Onboard Script`,
+        `# Router: ${routerName}`,
+        `# Generated: ${new Date().toISOString()}`,
+        ``,
+        `/system identity set name="${routerName}"`,
+        router?.ip_address ? `/ip address add address=${router.ip_address}/24 interface=ether1` : '',
+        `/radius add address=YOUR_RADIUS_IP secret=changeme service=hotspot,ppp`,
+        `/ip hotspot profile set default dns-name=hotspot.local login-by=http-chap,http-pap`,
+        ``,
+        `# Configure RADIUS accounting`,
+        `/radius set 0 accounting=yes interim-update=5m`,
+      ].filter(Boolean).join('\n');
+      const blob = new Blob([scriptContent], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
