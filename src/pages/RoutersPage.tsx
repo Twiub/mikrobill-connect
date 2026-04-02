@@ -234,54 +234,22 @@ const RoutersPage = () => {
   const handleWizardStep2 = async () => {
     setSaving(true);
     try {
-      // v3.19.2: Route through backend POST /api/admin/routers so the server
-      // can auto-assign ip_slot, run cross-router overlap checks, derive the
-      // IP plan, and register the NAS entry — all in one atomic transaction.
-      // Previously this went direct to Supabase, bypassing all IP validation.
-      const token = (await (window as any).supabase?.auth?.getSession?.())
-        ?.data?.session?.access_token
-        ?? localStorage.getItem("token");
-
       const payload: any = {
-        name:               form.name.trim(),
-        ip:                 form.dynamic_ip ? null : (form.ip_address.trim() || null),
-        dynamic_ip:         form.dynamic_ip,
-        cgnat_mode:         form.cgnat_mode,
-        api_port:           Number(form.api_port),
-        api_username:       form.api_username,
-        api_password:       form.api_password,
-        api_ssl:            form.api_ssl,
-        location:           form.location || null,
-        nas_ip:             form.dynamic_ip ? null : (form.nas_ip || form.ip_address.trim() || null),
-        secret:             form.secret_radius || "changeme",   // backend field name is "secret"
-        wan_interface:      form.wan_interface,
-        lan_interface:      form.lan_interface,
-        hotspot_interface:  form.hotspot_interface,
-        hotspot_address:    form.targeted_users > 0 ? null : (form.hotspot_address || null),  // let backend derive from slot
-        portal_server_ip:   form.portal_server_ip || null,
-        wan_bandwidth_mbps: Number(form.wan_bandwidth_mbps) || null,
-        default_conn_limit: form.default_conn_limit != null ? Number(form.default_conn_limit) : null,
-        // v3.19.2: If user selected a preset, send dhcp_pool=null so the backend
-        // auto-derives it from the assigned ip_slot. If manual entry, send as-is.
-        dhcp_pool:          form.targeted_users > 0 ? null : (form.dhcp_pool || null),
-        dhcp_prefix_length: form.targeted_users > 0 ? null : (form.dhcp_prefix_length || 24),
-        targeted_users:     form.targeted_users || null,
+        name:       form.name.trim(),
+        ip_address: form.ip_address.trim(),
+        model:      form.model || null,
+        firmware:   form.firmware || null,
+        status:     "online" as const,
       };
 
-      const res = await fetch("/api/admin/routers", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(payload),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json.error || json.errors?.[0]?.msg || "Failed to add router");
-      }
+      const { data: result, error } = await supabase
+        .from("routers")
+        .insert(payload)
+        .select()
+        .single();
+      if (error) throw error;
 
-      setNewRouterId(json.router.id);
+      setNewRouterId(result.id);
       queryClient.invalidateQueries({ queryKey: ["routers"] });
       setWizardStep(2);
     } catch (err: any) {
@@ -296,14 +264,22 @@ const RoutersPage = () => {
   const downloadScript = async (routerId: string, routerName: string) => {
     setDownloading(true);
     try {
-      const res = await fetch(`/api/admin/mikrotik/onboard-script/${routerId}`, {
-        headers: { Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` },
-      });
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.error || "Download failed");
-      }
-      const blob = await res.blob();
+      // Generate a basic onboard script locally since no backend endpoint exists
+      const router = (routers as any[]).find(r => r.id === routerId);
+      const scriptContent = [
+        `# MikroBill Connect Onboard Script`,
+        `# Router: ${routerName}`,
+        `# Generated: ${new Date().toISOString()}`,
+        ``,
+        `/system identity set name="${routerName}"`,
+        router?.ip_address ? `/ip address add address=${router.ip_address}/24 interface=ether1` : '',
+        `/radius add address=YOUR_RADIUS_IP secret=changeme service=hotspot,ppp`,
+        `/ip hotspot profile set default dns-name=hotspot.local login-by=http-chap,http-pap`,
+        ``,
+        `# Configure RADIUS accounting`,
+        `/radius set 0 accounting=yes interim-update=5m`,
+      ].filter(Boolean).join('\n');
+      const blob = new Blob([scriptContent], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;

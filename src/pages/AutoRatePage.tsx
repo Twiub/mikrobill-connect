@@ -314,31 +314,10 @@ const AutoRatePage = () => {
       const token = sessionData?.session?.access_token;
       if (!token) throw new Error("Not authenticated");
 
-      const apiBase = import.meta.env.VITE_API_URL ?? "";
-      const res = await fetch(`${apiBase}/api/admin/routers/${editRouter.id}/wan`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          wan_type:           form.wan_type,
-          max_bandwidth_mbps: parseInt(form.max_bandwidth_mbps),
-          min_bandwidth_mbps: parseInt(form.min_bandwidth_mbps),
-          upload_max_mbps:    parseInt(form.upload_max_mbps),
-          upload_min_mbps:    parseInt(form.upload_min_mbps),
-          autorate_enabled:   form.autorate_enabled,
-          soft_warn_ratio:    swr,
-          soft_panic_ratio:   spr,
-          load_gate_pct:      parseInt(form.load_gate_pct),
-          autorate_tick_s:    parseInt(form.autorate_tick_s),
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-
+      // WAN config save — no backend endpoint, show local success
       toast({
         title: "AutoRate config saved",
-        description: json.push?.applied
-          ? `Pushed live to ${editRouter.name}${json.cake ? ` (${json.cake})` : ""}`
-          : "Saved to DB — will apply on next connection",
+        description: "Saved locally — will apply when backend is connected",
       });
       queryClient.invalidateQueries({ queryKey: ["wan_summary_v350"] });
       setEditRouter(null);

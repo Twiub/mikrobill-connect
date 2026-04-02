@@ -1,32 +1,30 @@
 /**
- * src/hooks/useBranding.ts
- *
- * Fetches company branding settings from system_settings table.
- * Falls back to sensible defaults if not configured.
+ * src/hooks/useBranding.ts — v2.0.0 (Supabase)
+ * Reads branding from system_settings table.
  */
 
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 export interface Branding {
-  company_name:     string;
-  company_tagline:  string;
-  company_version:  string;
-  footer_text:      string;
-  logo_url:         string | null;
-  primary_color:    string;
-  support_email:    string | null;
-  support_phone:    string | null;
-  support_url:      string | null;
-  portal_welcome:   string;
-  portal_subtext:   string;
-  show_powered_by:  boolean;
+  company_name:    string;
+  company_tagline: string;
+  company_version: string;
+  footer_text:     string;
+  logo_url:        string | null;
+  primary_color:   string;
+  support_email:   string | null;
+  support_phone:   string | null;
+  support_url:     string | null;
+  portal_welcome:  string;
+  portal_subtext:  string;
+  show_powered_by: boolean;
 }
 
 const DEFAULTS: Branding = {
   company_name:    "WiFi Billing System",
   company_tagline: "MikroTik ISP Platform",
-  company_version: "v2.0",
+  company_version: "v3.20",
   footer_text:     "WiFi Billing System · Powered by MikroTik",
   logo_url:        null,
   primary_color:   "#2563EB",
@@ -40,15 +38,15 @@ const DEFAULTS: Branding = {
 
 export function useBranding(): { branding: Branding; isLoading: boolean } {
   const { data, isLoading } = useQuery<Branding>({
-    queryKey: ["system_settings", "branding"],
+    queryKey: ["app_settings", "branding"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data: row } = await supabase
         .from("system_settings")
         .select("value")
         .eq("key", "branding")
         .maybeSingle();
-      if (error || !data) return DEFAULTS;
-      return { ...DEFAULTS, ...(data.value as Partial<Branding>) };
+      if (!row?.value) return DEFAULTS;
+      return { ...DEFAULTS, ...(row.value as Partial<Branding>) };
     },
     staleTime: 5 * 60 * 1000,
     retry: false,

@@ -1,115 +1,62 @@
-// @ts-nocheck
 /**
- * src/pages/IPPoolPage.tsx
- *
- * Admin page: IP Pool Utilisation Monitor
- *   • Shows current used/total/% for every pool on every router
- *   • Historical sparkline trend for the last 2 hours
- *   • Red badge when any pool exceeds 80%
- *   • Auto-refreshes every 60 seconds
+ * src/pages/IPPoolPage.tsx — Supabase version
+ * IP Pool Utilisation Monitor using ip_pool_stats table.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { RefreshCw, Server, AlertTriangle, CheckCircle2 } from "lucide-react";
-import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
-} from "recharts";
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface PoolStat {
-  router_id:   number;
-  router_name: string;
-  pool_name:   string;
-  used:        number;
-  total:       number;
-  pct_used:    number;
-  recorded_at: string;
-}
-
-interface TrendPoint { time: string; pct: number }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
+import { useIpPools } from "@/hooks/useMissingFeatures";
+import { useRouters } from "@/hooks/useDatabase";
+import { useQueryClient } from "@tanstack/react-query";
 
 function poolColor(pct: number) {
   if (pct >= 90) return "text-destructive";
   if (pct >= 80) return "text-orange-500";
   if (pct >= 60) return "text-yellow-500";
-  return "text-success";
+  return "text-green-500";
 }
 
 function progressColor(pct: number) {
   if (pct >= 90) return "bg-destructive";
   if (pct >= 80) return "bg-orange-500";
   if (pct >= 60) return "bg-yellow-500";
-  return "bg-success";
+  return "bg-green-500";
 }
-
-// ── Custom hooks ──────────────────────────────────────────────────────────────
-
-function useIpPools() {
-  const [pools,   setPools]   = useState<PoolStat[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState<string | null>(null);
-
-  const fetch_ = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res  = await fetch("/api/admin/ip-pools", {
-        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      setPools(json.pools ?? []);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  return { pools, loading, error, refresh: fetch_ };
-}
-
-// ── Component ─────────────────────────────────────────────────────────────────
 
 const IPPoolPage = () => {
-  const { pools, loading, error, refresh } = useIpPools();
+  const { data: pools = [], isLoading, error } = useIpPools();
+  const { data: routers = [] } = useRouters();
+  const queryClient = useQueryClient();
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
-  // Initial load + 60-second auto-refresh
-  useEffect(() => {
-    refresh();
-    const id = setInterval(() => {
-      refresh();
-      setLastRefresh(new Date());
-    }, 60_000);
-    return () => clearInterval(id);
-  }, [refresh]);
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["ip_pool_stats"] });
+    setLastRefresh(new Date());
+  };
 
-  // Group by router
-  const byRouter = pools.reduce<Record<number, { name: string; pools: PoolStat[] }>>((acc, p) => {
-    if (!acc[p.router_id]) acc[p.router_id] = { name: p.router_name, pools: [] };
-    acc[p.router_id].pools.push(p);
+  const routerMap: Record<string, string> = {};
+  (routers as any[]).forEach(r => { routerMap[r.id] = r.name; });
+
+  const byRouter = (pools as any[]).reduce<Record<string, { name: string; pools: any[] }>>((acc, p) => {
+    const rid = p.router_id ?? "unknown";
+    if (!acc[rid]) acc[rid] = { name: routerMap[rid] ?? "Unknown Router", pools: [] };
+    acc[rid].pools.push(p);
     return acc;
   }, {});
 
-  const alertCount = pools.filter(p => p.pct_used > 80).length;
+  const alertCount = (pools as any[]).filter((p: any) => (p.pct_used ?? 0) > 80).length;
 
   return (
     <AdminLayout>
       <div className="space-y-6">
-        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold">IP Pool Utilisation</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              5,000+ user capacity · Polled every 5 minutes · Alert at 80%
+              Polled every 5 minutes · Alert at 80%
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -119,26 +66,23 @@ const IPPoolPage = () => {
                 {alertCount} pool{alertCount > 1 ? "s" : ""} near capacity
               </Badge>
             )}
-            <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={refresh} disabled={loading}>
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={refresh} disabled={isLoading}>
+              <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
               Refresh
             </Button>
           </div>
         </div>
 
         {lastRefresh && (
-          <p className="text-xs text-muted-foreground">
-            Last updated: {lastRefresh.toLocaleTimeString()}
-          </p>
+          <p className="text-xs text-muted-foreground">Last updated: {lastRefresh.toLocaleTimeString()}</p>
         )}
 
         {error && (
           <div className="glass-card p-4 border-destructive/30 text-destructive text-sm">
-            Failed to load pool data: {error}
+            Failed to load pool data: {(error as Error).message}
           </div>
         )}
 
-        {/* Pool cards grouped by router */}
         {Object.entries(byRouter).map(([routerId, group]) => (
           <div key={routerId} className="glass-card p-5 space-y-4">
             <div className="flex items-center gap-3">
@@ -152,23 +96,21 @@ const IPPoolPage = () => {
                 </p>
               </div>
             </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {group.pools.map(pool => (
+              {group.pools.map((pool: any) => (
                 <PoolCard key={`${pool.router_id}:${pool.pool_name}`} pool={pool} />
               ))}
             </div>
           </div>
         ))}
 
-        {!loading && pools.length === 0 && !error && (
+        {!isLoading && (pools as any[]).length === 0 && !error && (
           <div className="glass-card p-8 text-center text-muted-foreground text-sm">
             No pool data yet. The IP pool monitor runs every 5 minutes.<br />
-            Ensure MikroTik routers are online and RADIUS is connected.
+            Ensure MikroTik routers are online and data is being collected.
           </div>
         )}
 
-        {/* Pool sizing reference */}
         <div className="glass-card p-5">
           <h3 className="text-sm font-bold mb-3">Pool Capacity Reference</h3>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
@@ -192,44 +134,27 @@ const IPPoolPage = () => {
   );
 };
 
-// ── Pool card sub-component ───────────────────────────────────────────────────
-
-function PoolCard({ pool }: { pool: PoolStat }) {
-  const pct    = Math.min(pool.pct_used, 100);
+function PoolCard({ pool }: { pool: any }) {
+  const pct = Math.min(pool.pct_used ?? 0, 100);
   const isHigh = pct >= 80;
 
   return (
     <div className={`rounded-lg border p-4 space-y-3 ${isHigh ? "border-orange-500/40 bg-orange-500/5" : "border-border/50"}`}>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="flex items-center justify-between">
         <p className="text-xs font-mono font-semibold">{pool.pool_name}</p>
-        {isHigh
-          ? <AlertTriangle className="h-3.5 w-3.5 text-orange-500" />
-          : <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-        }
+        {isHigh ? <AlertTriangle className="h-3.5 w-3.5 text-orange-500" /> : <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
       </div>
-
       <div>
         <div className="flex justify-between mb-1.5">
           <span className={`text-lg font-bold ${poolColor(pct)}`}>{pct.toFixed(1)}%</span>
-          <span className="text-xs text-muted-foreground">{pool.used.toLocaleString()} / {pool.total.toLocaleString()}</span>
+          <span className="text-xs text-muted-foreground">{(pool.used_ips ?? 0).toLocaleString()} / {(pool.total_ips ?? 0).toLocaleString()}</span>
         </div>
         <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all ${progressColor(pct)}`}
-            style={{ width: `${pct}%` }}
-          />
+          <div className={`h-full rounded-full transition-all ${progressColor(pct)}`} style={{ width: `${pct}%` }} />
         </div>
       </div>
-
-      <p className="text-[10px] text-muted-foreground">
-        {(pool.total - pool.used).toLocaleString()} IPs available
-      </p>
-
-      {isHigh && (
-        <p className="text-[10px] text-orange-500 font-medium">
-          ⚠️ Consider adding next-pool or expanding subnet
-        </p>
-      )}
+      <p className="text-[10px] text-muted-foreground">{((pool.total_ips ?? 0) - (pool.used_ips ?? 0)).toLocaleString()} IPs available</p>
+      {isHigh && <p className="text-[10px] text-orange-500 font-medium">⚠️ Consider adding next-pool or expanding subnet</p>}
     </div>
   );
 }
