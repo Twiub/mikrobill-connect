@@ -332,14 +332,20 @@ function useQosStats() {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState<string | null>(null);
 
-  const fetch_ = useCallback(async () => {
+  const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res  = await fetch("/api/admin/qos", { headers: authHeaders() });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      setQueues(json.queues ?? []);
+      const { data, error: dbErr } = await supabase
+        .from("v_qos_latest")
+        .select("*");
+      if (dbErr) throw dbErr;
+      setQueues((data ?? []).map((q: any) => ({
+        router_id: q.router_id, queue_name: q.queue_name,
+        bytes_in: q.bytes_in, bytes_out: q.bytes_out,
+        drop_rate: q.drop_rate, rate_limit: q.rate_limit,
+        recorded_at: q.recorded_at,
+      })));
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -347,7 +353,7 @@ function useQosStats() {
     }
   }, []);
 
-  return { queues, loading, error, refresh: fetch_ };
+  return { queues, loading, error, refresh };
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
