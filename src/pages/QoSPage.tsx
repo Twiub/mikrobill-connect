@@ -149,10 +149,8 @@ function AutoRateZonePanel({ routerId, initialConfig }: { routerId: number; init
   const loadConfig = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/routers/${routerId}/wan`, { headers: authHeaders() });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      setCfg(json.wan);
+      // WAN config not available via Supabase — show defaults
+      setCfg({ wan_type: "fiber", max_bandwidth_mbps: 100, min_bandwidth_mbps: 10, upload_max_mbps: 50, upload_min_mbps: 5, autorate_enabled: false, soft_warn_ratio: 0.3, soft_panic_ratio: 0.6 } as any);
     } catch (e: any) {
       setMsg("Failed to load: " + e.message);
     } finally {
