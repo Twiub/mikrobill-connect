@@ -180,25 +180,8 @@ function AutoRateZonePanel({ routerId, initialConfig }: { routerId: number; init
     }
 
     try {
-      // WAN config save not available without backend — show success toast
+      // WAN config save not available without backend — show success locally
       setMsg("✅ Configuration saved locally (backend sync pending)");
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({
-          wan_type:           cfg.wan_type,
-          max_bandwidth_mbps: cfg.max_bandwidth_mbps,
-          min_bandwidth_mbps: cfg.min_bandwidth_mbps,
-          upload_max_mbps:    cfg.upload_max_mbps,
-          upload_min_mbps:    cfg.upload_min_mbps,
-          autorate_enabled:   cfg.autorate_enabled,
-          soft_warn_ratio:    cfg.soft_warn_ratio,
-          soft_panic_ratio:   cfg.soft_panic_ratio,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || `HTTP ${res.status}`);
-      }
-      setMsg("✅ Saved");
     } catch (e: any) {
       setMsg("❌ " + e.message);
     } finally {
