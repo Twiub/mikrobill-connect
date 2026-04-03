@@ -362,7 +362,6 @@ const PackagesPage = () => {
                 </div>
               </div>
             </TabsContent>
-          </Tabs>
             <TabsContent value="meshdesk" className="space-y-4">
               <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-xs text-cyan-300">
                 <strong>MeshDesk VLAN QoS</strong> — Assign this package to an 802.1Q VLAN so subscribers
@@ -417,6 +416,7 @@ const PackagesPage = () => {
                 <p>4. Reload FreeRADIUS: <code>sudo systemctl reload freeradius</code></p>
               </div>
             </TabsContent>
+          </Tabs>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving} className="gap-2">
