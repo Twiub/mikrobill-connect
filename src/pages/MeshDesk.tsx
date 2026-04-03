@@ -47,16 +47,21 @@ import { supabase } from "@/integrations/supabase/client";
 const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
 async function apiFetch(path: string, opts: RequestInit = {}) {
   const { data: { session } } = await supabase.auth.getSession();
-  const res = await fetch(`${API}${path}`, {
-    ...opts,
-    headers: {
-      "Content-Type": "application/json",
-      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-      ...(opts.headers ?? {}),
-    },
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  try {
+    const res = await fetch(`${API}${path}`, {
+      ...opts,
+      headers: {
+        "Content-Type": "application/json",
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        ...(opts.headers ?? {}),
+      },
+    });
+    if (!res.ok) return { data: null, success: false, error: `HTTP ${res.status}` };
+    const text = await res.text();
+    try { return JSON.parse(text); } catch { return { data: null, success: false, error: "Invalid JSON response" }; }
+  } catch (err) {
+    return { data: null, success: false, error: String(err) };
+  }
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
