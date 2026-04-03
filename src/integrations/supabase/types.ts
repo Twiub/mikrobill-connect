@@ -209,21 +209,27 @@ export type Database = {
       }
       expenditure_categories: {
         Row: {
+          color: string
           created_at: string
           description: string | null
           id: string
+          is_recurring: boolean
           name: string
         }
         Insert: {
+          color?: string
           created_at?: string
           description?: string | null
           id?: string
+          is_recurring?: boolean
           name: string
         }
         Update: {
+          color?: string
           created_at?: string
           description?: string | null
           id?: string
+          is_recurring?: boolean
           name?: string
         }
         Relationships: []
@@ -233,33 +239,60 @@ export type Database = {
           added_by: string
           amount: number
           category: Database["public"]["Enums"]["expense_category"]
+          category_id: string | null
           created_at: string
           description: string
           expense_date: string
           id: string
+          is_recurring: boolean
+          notes: string | null
           receipt_url: string | null
+          staff_id: string | null
         }
         Insert: {
           added_by: string
           amount: number
           category: Database["public"]["Enums"]["expense_category"]
+          category_id?: string | null
           created_at?: string
           description: string
           expense_date?: string
           id?: string
+          is_recurring?: boolean
+          notes?: string | null
           receipt_url?: string | null
+          staff_id?: string | null
         }
         Update: {
           added_by?: string
           amount?: number
           category?: Database["public"]["Enums"]["expense_category"]
+          category_id?: string | null
           created_at?: string
           description?: string
           expense_date?: string
           id?: string
+          is_recurring?: boolean
+          notes?: string | null
           receipt_url?: string | null
+          staff_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "expenditures_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "expenditure_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenditures_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ip_bindings: {
         Row: {
@@ -825,31 +858,46 @@ export type Database = {
         Row: {
           active: boolean
           created_at: string
+          department: string | null
           email: string | null
           full_name: string
+          hire_date: string | null
           id: string
+          is_active: boolean
           phone: string | null
+          recurring_day: number
           role: string
+          salary: number
           user_id: string | null
         }
         Insert: {
           active?: boolean
           created_at?: string
+          department?: string | null
           email?: string | null
           full_name: string
+          hire_date?: string | null
           id?: string
+          is_active?: boolean
           phone?: string | null
+          recurring_day?: number
           role?: string
+          salary?: number
           user_id?: string | null
         }
         Update: {
           active?: boolean
           created_at?: string
+          department?: string | null
           email?: string | null
           full_name?: string
+          hire_date?: string | null
           id?: string
+          is_active?: boolean
           phone?: string | null
+          recurring_day?: number
           role?: string
+          salary?: number
           user_id?: string | null
         }
         Relationships: []
