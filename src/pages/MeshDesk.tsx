@@ -1068,7 +1068,7 @@ export default function MeshDeskPage() {
                           <Settings className="h-3 w-3" />
                         </Button>
                         <Button size="sm" variant="ghost" className="h-7 px-2"
-                          onClick={() => { setMeshForm({ name: mesh.name, description: mesh.description, cloud_id: mesh.cloud_id?.toString() || "", network_id: (mesh as any).network_id?.toString() || "", router_id: mesh.router_id?.toString() || "", ip_pool_cidr: mesh.ip_pool_cidr || "" }); setCidrConflict({ conflict: false, reason: null }); setMeshDlg({ open: true, mode: "edit", mesh }); }}>
+                          onClick={() => { setMeshForm({ name: mesh.name, description: mesh.description, cloud_id: mesh.cloud_id?.toString() || "", network_id: (mesh as any).network_id?.toString() || "", router_id: (mesh as any).router_id?.toString() || "", ip_pool_cidr: mesh.ip_pool_cidr || "" }); setCidrConflict({ conflict: false, reason: null }); setMeshDlg({ open: true, mode: "edit", mesh }); }}>
                           <Edit className="h-3 w-3" />
                         </Button>
                         <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive" onClick={() => deleteMesh(mesh.id)}>
