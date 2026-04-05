@@ -63,6 +63,7 @@ interface ProfileEntry {
   id: number; ssid: string; encryption: string; key: string;
   vlan_id: number | null; radius_ip: string; band: string;
   hidden: boolean; isolate: boolean;
+  [key: string]: any;
 }
 
 interface ProfileExit {
