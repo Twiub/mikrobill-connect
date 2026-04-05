@@ -391,18 +391,18 @@ export default function HotspotTxnRecovery({
                 <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0 mt-0.5" />
                 <div className="space-y-1">
                   <p className="text-sm font-semibold text-success">Access restored!</p>
-                  <p className="text-xs text-muted-foreground">
-                    Welcome back, {stage.data.data.subscriber.full_name || stage.data.data.subscriber.username}.
-                    Your <strong>{stage.data.data.transaction.package}</strong> package is active
-                    {stage.data.data.transaction.expires_at
-                      ? ` until ${fmtDate(stage.data.data.transaction.expires_at)}`
+                   <p className="text-xs text-muted-foreground">
+                    Welcome back, {stage.data.subscriber.full_name || stage.data.subscriber.username}.
+                    Your <strong>{stage.data.transaction.package}</strong> package is active
+                    {stage.data.transaction.expires_at
+                      ? ` until ${fmtDate(stage.data.transaction.expires_at)}`
                       : ""}.
                   </p>
-                  {stage.data.data.transaction.amount && (
+                  {stage.data.transaction.amount && (
                     <p className="text-xs text-muted-foreground">
-                      Payment: <strong>{fmtAmount(stage.data.data.transaction.amount)}</strong>
-                      {stage.data.data.transaction.paid_at
-                        ? ` on ${fmtDate(stage.data.data.transaction.paid_at)}`
+                      Payment: <strong>{fmtAmount(stage.data.transaction.amount)}</strong>
+                      {stage.data.transaction.paid_at
+                        ? ` on ${fmtDate(stage.data.transaction.paid_at)}`
                         : ""}
                     </p>
                   )}
