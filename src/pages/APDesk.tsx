@@ -506,7 +506,7 @@ function ProfileDetail({ profile: initialProfile, onBack }) {
   const [showEntryForm, setShowEntryForm] = useState(false);
   const [showExitForm,  setShowExitForm]  = useState(false);
   const [showApForm,    setShowApForm]    = useState(false);
-  const [form,          setForm]          = useState({});
+  const [form,          setForm]          = useState<Record<string, any>>({});
   const [tab,           setTab]           = useState("aps");
   // AP location picker state stored in form as form.lat / form.lon
 
