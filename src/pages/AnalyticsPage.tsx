@@ -13,9 +13,9 @@ const AnalyticsPage = () => {
   const { data: subscribers = [] }  = useSubscribers();
   const { data: packages = [] }     = usePackages();
 
-  const txns = transactions as Record<string, unknown>[];
-  const subs = subscribers as Record<string, unknown>[];
-  const pkgs = packages as Record<string, unknown>[];
+  const txns = transactions as any[];
+  const subs = subscribers as any[];
+  const pkgs = packages as any[];
 
   const totalRevenue = txns.filter(t => t.status === "success").reduce((s, t) => s + Number(t.amount), 0);
   const totalUsers   = subs.length;

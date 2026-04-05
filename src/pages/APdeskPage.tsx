@@ -70,6 +70,7 @@ interface ProfileExit {
   id: number; name: string; gateway_type: string;
   radius_ip: string; radius_secret: string;
   uam_url: string; uam_secret: string; walled_garden: string;
+  [key: string]: any;
 }
 
 interface AccessPoint {
