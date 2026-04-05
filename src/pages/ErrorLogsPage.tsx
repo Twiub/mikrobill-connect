@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ErrorLogsPage.tsx — v2.1.0
  *
@@ -13,12 +12,15 @@ import { useState, useMemo } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { useErrorLogs } from "@/hooks/useDatabase";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useQueryClient } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search, CheckCircle, AlertTriangle, XCircle, Info, Download } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { getToken } from "@/lib/authClient";
 
 const levelIcons: Record<string, React.ReactNode> = {
   error: <XCircle className="h-4 w-4 text-destructive" />,
@@ -43,6 +45,46 @@ const ErrorLogsPage = () => {
   const [filter, setFilter] = useState<"all"|"error"|"warn"|"info">("all");
   const debouncedSearch = useDebounce(search, 300);
   const { data: errorLogs = [], isLoading } = useErrorLogs();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [resolving, setResolving] = useState<string | null>(null);
+
+  const apiBase = () => (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+  // BUG-P3-CRIT-08 FIX: Export CSV — calls GET /api/admin/error-logs/export
+  const handleExportCsv = async () => {
+    try {
+      const res = await fetch(`${apiBase()}/admin/error-logs/export`, {
+        headers: { Authorization: `Bearer ${await getToken()}` },
+      });
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `error_logs_${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast({ title: "Export Failed", description: err.message, variant: "destructive" });
+    }
+  };
+
+  // BUG-P3-CRIT-08 FIX: Resolve — calls PATCH /api/admin/error-logs/:id/resolve
+  const handleResolve = async (log: any) => {
+    setResolving(log.id);
+    try {
+      const res = await fetch(`${apiBase()}/admin/error-logs/${log.id}/resolve`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${await getToken()}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to resolve");
+      toast({ title: "Resolved", description: "Log entry marked as resolved." });
+      queryClient.invalidateQueries({ queryKey: ["error_logs"] });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally { setResolving(null); }
+  };
 
   const filtered = useMemo(() => {
     return (errorLogs as any[]).filter(e => {
@@ -68,7 +110,7 @@ const ErrorLogsPage = () => {
             <h1 className="text-xl sm:text-2xl font-bold">Error Logs &amp; Bug History</h1>
             <p className="text-sm text-muted-foreground mt-0.5">System-wide error tracking with resolution workflow</p>
           </div>
-          <Button variant="outline" size="sm" className="gap-2 self-start sm:self-auto" aria-label="Export error logs as CSV">
+          <Button variant="outline" size="sm" className="gap-2 self-start sm:self-auto" aria-label="Export error logs as CSV" onClick={handleExportCsv}>
             <Download className="h-4 w-4" aria-hidden="true" />
             Export CSV
           </Button>
@@ -157,7 +199,14 @@ const ErrorLogsPage = () => {
                           <span className="text-[10px]">Fixed</span>
                         </div>
                       ) : (
-                        <Button variant="ghost" size="sm" className="h-6 text-[10px] text-primary hover:text-primary" aria-label={`Mark log "${log.message?.slice(0,30)}" as resolved`}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-[10px] text-primary hover:text-primary"
+                          aria-label={`Mark log "${log.message?.slice(0,30)}" as resolved`}
+                          disabled={resolving === log.id}
+                          onClick={() => handleResolve(log)}
+                        >
                           Resolve
                         </Button>
                       )}

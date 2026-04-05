@@ -1,14 +1,13 @@
-// @ts-nocheck
 import { useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { PanelErrorBoundary } from "@/components/ErrorBoundary";
 import StatusBadge from "@/components/StatusBadge";
 import { useRouters } from "@/hooks/useDatabase";
-import { supabase } from "@/integrations/supabase/client";
+import { getToken } from "@/lib/authClient";
 import {
   Wifi, AlertTriangle, Settings, Plus, Loader2, Save, Eye, EyeOff,
   Download, Trash2, CheckCircle2, ChevronRight, ChevronLeft, Terminal,
-  Network, Key, Link, Radio
+  Network, Key, Link, Radio, Tv2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +47,7 @@ const EMPTY_FORM = {
   hotspot_address: "",
   portal_server_ip: "",
   wan_bandwidth_mbps: 100,
+  wan_speed_dynamic: false,  // true = LTE/Starlink; send wan_bandwidth_mbps=null (no global WAN queue)
   default_conn_limit: 300 as number | null,
   dhcp_pool: "192.168.88.10-192.168.88.254",
   dhcp_prefix_length: 24,
@@ -234,22 +234,52 @@ const RoutersPage = () => {
   const handleWizardStep2 = async () => {
     setSaving(true);
     try {
+      // v3.19.2: Route through backend POST /api/admin/routers so the server
+      // can auto-assign ip_slot, run cross-router overlap checks, derive the
+      // IP plan, and register the NAS entry — all in one atomic transaction.
+      // Previously this went direct to Supabase, bypassing all IP validation.
+      const token = getToken();
+
       const payload: any = {
-        name:       form.name.trim(),
-        ip_address: form.ip_address.trim(),
-        model:      form.model || null,
-        firmware:   form.firmware || null,
-        status:     "online" as const,
+        name:               form.name.trim(),
+        ip:                 form.dynamic_ip ? null : (form.ip_address.trim() || null),
+        dynamic_ip:         form.dynamic_ip,
+        cgnat_mode:         form.cgnat_mode,
+        api_port:           Number(form.api_port),
+        api_username:       form.api_username,
+        api_password:       form.api_password,
+        api_ssl:            form.api_ssl,
+        location:           form.location || null,
+        nas_ip:             form.dynamic_ip ? null : (form.nas_ip || form.ip_address.trim() || null),
+        secret:             form.secret_radius || "changeme",   // backend field name is "secret"
+        wan_interface:      form.wan_interface,
+        lan_interface:      form.lan_interface,
+        hotspot_interface:  form.hotspot_interface,
+        hotspot_address:    form.targeted_users > 0 ? null : (form.hotspot_address || null),  // let backend derive from slot
+        portal_server_ip:   form.portal_server_ip || null,
+        wan_bandwidth_mbps: form.wan_speed_dynamic ? null : (Number(form.wan_bandwidth_mbps) || null),
+        default_conn_limit: form.default_conn_limit != null ? Number(form.default_conn_limit) : null,
+        // v3.19.2: If user selected a preset, send dhcp_pool=null so the backend
+        // auto-derives it from the assigned ip_slot. If manual entry, send as-is.
+        dhcp_pool:          form.targeted_users > 0 ? null : (form.dhcp_pool || null),
+        dhcp_prefix_length: form.targeted_users > 0 ? null : (form.dhcp_prefix_length || 24),
+        targeted_users:     form.targeted_users || null,
       };
 
-      const { data: result, error } = await supabase
-        .from("routers")
-        .insert(payload)
-        .select()
-        .single();
-      if (error) throw error;
+      const res = await fetch("/api/admin/routers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || json.errors?.[0]?.msg || "Failed to add router");
+      }
 
-      setNewRouterId(result.id);
+      setNewRouterId(json.router.id);
       queryClient.invalidateQueries({ queryKey: ["routers"] });
       setWizardStep(2);
     } catch (err: any) {
@@ -264,22 +294,14 @@ const RoutersPage = () => {
   const downloadScript = async (routerId: string, routerName: string) => {
     setDownloading(true);
     try {
-      // Generate a basic onboard script locally since no backend endpoint exists
-      const router = (routers as any[]).find(r => r.id === routerId);
-      const scriptContent = [
-        `# MikroBill Connect Onboard Script`,
-        `# Router: ${routerName}`,
-        `# Generated: ${new Date().toISOString()}`,
-        ``,
-        `/system identity set name="${routerName}"`,
-        router?.ip_address ? `/ip address add address=${router.ip_address}/24 interface=ether1` : '',
-        `/radius add address=YOUR_RADIUS_IP secret=changeme service=hotspot,ppp`,
-        `/ip hotspot profile set default dns-name=hotspot.local login-by=http-chap,http-pap`,
-        ``,
-        `# Configure RADIUS accounting`,
-        `/radius set 0 accounting=yes interim-update=5m`,
-      ].filter(Boolean).join('\n');
-      const blob = new Blob([scriptContent], { type: 'text/plain' });
+      const res = await fetch(`/api/admin/mikrotik/onboard-script/${routerId}`, {
+        headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || "Download failed");
+      }
+      const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -324,10 +346,15 @@ const RoutersPage = () => {
       hotspot_address: r.hotspot_address ?? "",
       portal_server_ip: r.portal_server_ip ?? "",
       wan_bandwidth_mbps: r.wan_bandwidth_mbps ?? 100,
+      wan_speed_dynamic: r.wan_bandwidth_mbps == null,
       default_conn_limit: r.default_conn_limit ?? 300,
       dhcp_pool: r.dhcp_pool ?? "",
       dhcp_prefix_length: r.dhcp_prefix_length ?? 24,
       targeted_users: 0,
+      // BUG-DLNA-01 FIX: per-router DLNA fields (migration 261)
+      dlna_server_ip: r.dlna_server_ip ?? "",
+      dlna_port: r.dlna_port ?? 8200,
+      dlna_enabled: r.dlna_enabled ?? null,  // null = use global setting
     });
     setEditOpen(true);
   };
@@ -356,13 +383,26 @@ const RoutersPage = () => {
         hotspot_interface: editForm.hotspot_interface,
         hotspot_address: editForm.hotspot_address || null,
         portal_server_ip: editForm.portal_server_ip || null,
-        wan_bandwidth_mbps: Number(editForm.wan_bandwidth_mbps) || null,
+        wan_bandwidth_mbps: editForm.wan_speed_dynamic ? null : (Number(editForm.wan_bandwidth_mbps) || null),
         default_conn_limit: editForm.default_conn_limit != null ? Number(editForm.default_conn_limit) : null,
         dhcp_pool: editForm.dhcp_pool || null,
         dhcp_prefix_length: editForm.dhcp_prefix_length || 24,
+        // BUG-DLNA-01 FIX: per-router DLNA settings
+        // Empty string → null (use global setting); explicit value overrides global
+        dlna_server_ip: (editForm as any).dlna_server_ip?.trim() || null,
+        dlna_port: (editForm as any).dlna_port ? Number((editForm as any).dlna_port) : null,
+        dlna_enabled: (editForm as any).dlna_enabled,  // null = inherit global
       };
-      const { error } = await supabase.from("routers").update(payload).eq("id", editId!);
-      if (error) throw error;
+      const res = await fetch(`/api/admin/routers/${editId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken() ?? ""}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || json.errors?.[0]?.msg || "Update failed");
       toast({ title: "Router Updated", description: `${editForm.name} saved.` });
       queryClient.invalidateQueries({ queryKey: ["routers"] });
       setEditOpen(false);
@@ -379,8 +419,12 @@ const RoutersPage = () => {
     if (!deleteId) return;
     setDeleteDeleting(true);
     try {
-      const { error } = await supabase.from("routers").delete().eq("id", deleteId);
-      if (error) throw error;
+      const res = await fetch(`/api/admin/routers/${deleteId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Delete failed");
       toast({ title: "Router Removed" });
       queryClient.invalidateQueries({ queryKey: ["routers"] });
       setDeleteId(null);
@@ -586,7 +630,7 @@ const RoutersPage = () => {
 
       {/* ── Add Router Wizard ─────────────────────────────────────────────────── */}
       <Dialog open={wizardOpen} onOpenChange={closeWizard}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>
               {wizardStep === 0 && "Add Router — Basic Info"}
@@ -599,7 +643,7 @@ const RoutersPage = () => {
 
           {/* Step 0: Basic */}
           {wizardStep === 0 && (
-            <div className="space-y-4">
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label>Router Name *</Label>
@@ -729,7 +773,7 @@ const RoutersPage = () => {
 
           {/* Step 1: Topology */}
           {wizardStep === 1 && (
-            <div className="space-y-4">
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
               <div className="p-3 rounded-lg bg-muted/40 text-xs text-muted-foreground flex gap-2">
                 <Network className="h-4 w-4 shrink-0 mt-0.5" />
                 These settings are embedded into the setup script so they're pre-configured automatically.
@@ -747,13 +791,30 @@ const RoutersPage = () => {
                   <Label>Hotspot Interface</Label>
                   <Input placeholder="bridge" value={form.hotspot_interface} onChange={(e) => set("hotspot_interface")(e.target.value)} />
                 </div>
-                <div className="space-y-1.5">
-                  <Label>Portal Server IP</Label>
-                  <Input placeholder="10.0.0.1" value={form.portal_server_ip} onChange={(e) => set("portal_server_ip")(e.target.value)} />
+                <div className="col-span-2 rounded-md border border-info/20 bg-info/5 px-3 py-2 text-xs text-info">
+                  ℹ️ Portal Server IP is auto-detected from your MikroBill server URL — no need to enter it manually.
                 </div>
-                <div className="space-y-1.5">
-                  <Label>WAN Bandwidth (Mbps)</Label>
-                  <Input type="number" placeholder="100" value={form.wan_bandwidth_mbps} onChange={(e) => set("wan_bandwidth_mbps")(e.target.value)} />
+                <div className="col-span-2 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label>WAN Bandwidth</Label>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-muted-foreground">Dynamic (LTE / Starlink)</span>
+                      <Switch
+                        checked={form.wan_speed_dynamic}
+                        onCheckedChange={(v) => setForm((f) => ({ ...f, wan_speed_dynamic: v }))}
+                      />
+                    </div>
+                  </div>
+                  {form.wan_speed_dynamic ? (
+                    <div className="rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-xs text-blue-400">
+                      ✓ Variable speed — no global WAN parent queue will be set in the MikroTik script. Per-user queues still apply. Ideal for LTE, Starlink, or WiMAX.
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Input type="number" placeholder="100" value={form.wan_bandwidth_mbps} onChange={(e) => set("wan_bandwidth_mbps")(e.target.value)} className="w-36" />
+                      <span className="text-sm text-muted-foreground">Mbps — sets WAN queue parent in RouterOS</span>
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <Label>Default Conn Limit / User</Label>
@@ -921,15 +982,17 @@ const RoutersPage = () => {
 
       {/* ── Edit Router Dialog ────────────────────────────────────────────────── */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
+        <DialogContent className="max-w-xl max-h-[90vh] flex flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Edit Router — {editForm.name}</DialogTitle>
           </DialogHeader>
+          <div className="flex-1 overflow-y-auto pr-1">
           <Tabs defaultValue="connection">
             <TabsList className="mb-4">
               <TabsTrigger value="connection">Connection</TabsTrigger>
               <TabsTrigger value="topology">Topology</TabsTrigger>
               <TabsTrigger value="radius">RADIUS / NAS</TabsTrigger>
+              <TabsTrigger value="dlna" className="gap-1.5"><Tv2 className="h-3.5 w-3.5" />DLNA</TabsTrigger>
             </TabsList>
 
             <TabsContent value="connection" className="space-y-4">
@@ -1009,28 +1072,46 @@ const RoutersPage = () => {
                   <Label>Hotspot IP</Label>
                   <Input value={editForm.hotspot_address} onChange={(e) => setEdit("hotspot_address")(e.target.value)} />
                 </div>
-                <div className="space-y-1.5">
-                  <Label>Portal Server IP</Label>
-                  <Input value={editForm.portal_server_ip} onChange={(e) => setEdit("portal_server_ip")(e.target.value)} />
+                <div className="col-span-2 rounded-md border border-info/20 bg-info/5 px-3 py-2 text-xs text-info">
+                  ℹ️ Portal Server IP is auto-detected from your MikroBill server URL — no need to enter it manually.
                 </div>
-                <div className="space-y-1.5">
-                  <Label>WAN Bandwidth (Mbps)</Label>
-                  <Input type="number" value={editForm.wan_bandwidth_mbps} onChange={(e) => setEdit("wan_bandwidth_mbps")(e.target.value)} />
+                <div className="col-span-2 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label>WAN Bandwidth</Label>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-muted-foreground">Dynamic (LTE / Starlink)</span>
+                      <Switch
+                        checked={editForm.wan_speed_dynamic ?? false}
+                        onCheckedChange={(v) => setEditForm((f) => ({ ...f, wan_speed_dynamic: v }))}
+                      />
+                    </div>
+                  </div>
+                  {editForm.wan_speed_dynamic ? (
+                    <div className="rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-xs text-blue-400">
+                      ✓ Variable speed — no global WAN parent queue. Per-user queues still apply.
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Input type="number" value={editForm.wan_bandwidth_mbps} onChange={(e) => setEdit("wan_bandwidth_mbps")(e.target.value)} className="w-36" />
+                      <span className="text-sm text-muted-foreground">Mbps</span>
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <Label>Default Conn Limit / User</Label>
                   <Input type="number" placeholder="300" value={editForm.default_conn_limit ?? ""} onChange={(e) => setEdit("default_conn_limit")(e.target.value === "" ? null : Number(e.target.value))} />
                   <p className="text-[10px] text-muted-foreground">Per-IP conntrack cap in RouterOS script (null = disabled)</p>
                 </div>
-                <div className="col-span-2 space-y-1.5">
-                  <Label>DHCP Pool Range</Label>
-                  <Input value={editForm.dhcp_pool} onChange={(e) => setEdit("dhcp_pool")(e.target.value)} />
-                  <p className="text-[10px] text-muted-foreground">Format: start-end e.g. 10.10.0.10-10.10.3.254</p>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Subnet Prefix Length</Label>
-                  <Input type="number" placeholder="24" value={editForm.dhcp_prefix_length} onChange={(e) => setEdit("dhcp_prefix_length")(Number(e.target.value))} />
-                  <p className="text-[10px] text-muted-foreground">/24=254 IPs  /23=510  /22=1022  /21=2046</p>
+                <div className="col-span-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 space-y-1">
+                  <div className="flex items-center gap-2 text-xs font-medium text-amber-600">
+                    <span>🔒</span><span>System-Managed IP Addressing</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-muted-foreground font-mono mt-1">
+                    <span>DHCP Pool:</span><span className="text-foreground">{editForm.dhcp_pool || "—"}</span>
+                    <span>Prefix Length:</span><span className="text-foreground">/{editForm.dhcp_prefix_length || 24}</span>
+                    <span>Hotspot IP:</span><span className="text-foreground">{editForm.hotspot_address || "—"}</span>
+                  </div>
+                  <p className="text-[10px] text-amber-600/80 mt-1">Auto-assigned at onboarding to prevent IP conflicts. Contact support to change the subnet.</p>
                 </div>
               </div>
             </TabsContent>
@@ -1045,8 +1126,63 @@ const RoutersPage = () => {
                 <Input type="password" value={editForm.secret_radius} onChange={(e) => setEdit("secret_radius")(e.target.value)} />
               </div>
             </TabsContent>
+
+            {/* ── DLNA tab (BUG-DLNA-01 FIX: per-router UMS IP) ──────────── */}
+            <TabsContent value="dlna" className="space-y-4">
+              <div className="rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2.5 text-xs text-blue-400 space-y-1">
+                <p className="font-medium flex items-center gap-1.5"><Tv2 className="h-3.5 w-3.5" /> Per-router DLNA / Universal Media Server</p>
+                <p className="text-blue-400/80">
+                  Set a UMS IP here if this router's LAN is on a different subnet from your global DLNA setting.
+                  Leave blank to inherit the global value from <span className="font-mono">Settings → DLNA</span>.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>UMS Server IP (this router's LAN)</Label>
+                <Input
+                  className="font-mono"
+                  placeholder={"Inherit global (e.g. " + ((editForm as any).dlna_server_ip || "192.168.88.200") + ")"}
+                  value={(editForm as any).dlna_server_ip ?? ""}
+                  onChange={(e) => setEditForm((f: any) => ({ ...f, dlna_server_ip: e.target.value }))}
+                />
+                <p className="text-[10px] text-muted-foreground">Static LAN IP of the UMS PC reachable from this router. Empty = use global setting.</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>UMS Streaming Port</Label>
+                <Input
+                  type="number"
+                  placeholder="8200"
+                  value={(editForm as any).dlna_port ?? ""}
+                  onChange={(e) => setEditForm((f: any) => ({ ...f, dlna_port: e.target.value === "" ? null : Number(e.target.value) }))}
+                />
+                <p className="text-[10px] text-muted-foreground">Default 8200. Empty = use global setting.</p>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-border/50 px-3 py-2.5">
+                <div>
+                  <p className="text-sm font-medium">DLNA on this router</p>
+                  <p className="text-[10px] text-muted-foreground">Override enable/disable for this router only. Toggle off = no dlna-allowed list managed here.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {(editForm as any).dlna_enabled === null ? "Global" : (editForm as any).dlna_enabled ? "On" : "Off"}
+                  </span>
+                  <select
+                    className="text-xs rounded border border-border bg-background px-2 py-1"
+                    value={(editForm as any).dlna_enabled === null ? "global" : (editForm as any).dlna_enabled ? "true" : "false"}
+                    onChange={(e) => setEditForm((f: any) => ({
+                      ...f,
+                      dlna_enabled: e.target.value === "global" ? null : e.target.value === "true",
+                    }))}
+                  >
+                    <option value="global">Use global setting</option>
+                    <option value="true">Enabled</option>
+                    <option value="false">Disabled</option>
+                  </select>
+                </div>
+              </div>
+            </TabsContent>
           </Tabs>
-          <DialogFooter>
+          </div>
+          <DialogFooter className="shrink-0 pt-4 border-t border-border/50">
             <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
             <Button onClick={handleEditSave} disabled={editSaving} className="gap-2">
               {editSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}

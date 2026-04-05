@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * frontend/src/pages/HotspotPortal.tsx — v3.8.3-patch1
  *
@@ -35,7 +34,6 @@ import {
 } from "lucide-react";
 import { Button }  from "@/components/ui/button";
 import { Input }   from "@/components/ui/input";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
@@ -131,6 +129,7 @@ type AuthResult =
   | "mac_expired"    // MAC known, subscription expired
   | "token_expired"  // device token found, subscription/token expired
   | "no_credentials" // no MAC and no stored token at all
+  | "slot_overflow"  // BUG-2 FIX: MAC on owner's plan but all slots taken
   | "failed";        // unexpected network or server error
 
 type AuthFailReason = Exclude<AuthResult, "granted" | "portal"> | null;
@@ -165,6 +164,18 @@ function inferDeviceTypeFromUA(): "phone" | "tablet" | "laptop" | "other" {
   if (ua.includes("android") || ua.includes("iphone") || ua.includes("ipod")) return "phone";
   if (ua.includes("windows") || ua.includes("macintosh") || ua.includes("linux")) return "laptop";
   return "other";
+}
+
+// BUG-6 FIX: Normalise MAC to AA:BB:CC:DD:EE:FF regardless of input format.
+// Handles: AA:BB:CC:DD:EE:FF (already ok), AA-BB-CC-DD-EE-FF (dashes),
+// AABBCCDDEEFF (no separators — common on Android and embedded devices).
+// Without this, no-separator MACs silently fail auth.
+function normalizeMac(raw: string): string {
+  const clean = raw.replace(/[:\-.]/g, "").toUpperCase();
+  if (/^[0-9A-F]{12}$/.test(clean)) {
+    return clean.match(/.{2}/g)!.join(":");
+  }
+  return raw.toUpperCase().replace(/-/g, ":").trim();
 }
 
 // ── Internet grant via MikroTik hotspot login ─────────────────────────────────
@@ -206,7 +217,7 @@ interface PortalDashboardProps {
   hotspotParams: any;
   apiBase: string;
   onReconnect: () => void;
-  onBuyPackage: (pkg: Package) => void;
+  onBuyPackage: (pkg: Package | null) => void;
   onLogout: () => void;
   toast: any;
 }
@@ -221,9 +232,8 @@ function PortalDashboard({
   const portalToken = getCookie(COOKIE_KEY);
 
   // Detect if this device is on someone else's plan
-  const currentMac = hotspotParams.mac
-    ? hotspotParams.mac.toUpperCase().replace(/-/g, ":").trim()
-    : null;
+  // BUG-6 FIX: Use normalizeMac() to handle AABBCCDDEEFF no-separator format
+  const currentMac = hotspotParams.mac ? normalizeMac(hotspotParams.mac) : null;
 
   const loadDevices = async () => {
     if (!portalToken) return;
@@ -339,9 +349,12 @@ function PortalDashboard({
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-semibold text-amber-300">Using {sharedInfo.ownerName}'s plan</p>
+              <p className="text-sm font-semibold text-amber-300">
+                You're enjoying {sharedInfo.ownerName}'s WiFi 🎉
+              </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Your internet access depends on their subscription. You can leave and buy your own package anytime.
+                Your spot depends on their plan staying active. Get your own plan for
+                guaranteed access — no sharing, no waiting, no interruptions.
               </p>
               <div className="flex gap-2 mt-3">
                 <Button
@@ -356,12 +369,13 @@ function PortalDashboard({
                     : <UserMinus className="h-3 w-3" />}
                   Leave plan
                 </Button>
+                {/* BUG-2 FIX: Pass null so parent navigates to package select without pre-selecting */}
                 <Button
                   size="sm"
-                  className="text-xs gap-1.5"
-                  onClick={() => packages[0] && onBuyPackage(packages[0])}
+                  className="text-xs gap-1.5 bg-primary"
+                  onClick={() => onBuyPackage(null as any)}
                 >
-                  Buy my own
+                  Get my own plan →
                 </Button>
               </div>
             </div>
@@ -519,6 +533,8 @@ const HotspotPortal = () => {
   const [autoConnectStatus, setAutoConnectStatus] = useState("");
   // BUG-PWA-02 FIX: Track WHY auth failed so package page shows correct context
   const [authFailReason, setAuthFailReason] = useState<AuthFailReason>(null);
+  // BUG-2 FIX: Owner's username for slot_overflow banner ("You're on X's plan")
+  const [slotOwnerUsername, setSlotOwnerUsername] = useState<string | null>(null);
   // Recovery state
   const [recoverTxnId, setRecoverTxnId]       = useState("");
   const [recoverPhone, setRecoverPhone]        = useState("");
@@ -576,11 +592,45 @@ const HotspotPortal = () => {
         // to MikroTik after we receive the OTP. AbortSignal.timeout() is supported in all
         // modern browsers (Chrome 103+, Firefox 100+, Safari 16+). Older browsers fall back
         // to no timeout (the catch block handles the AbortError gracefully).
+
+        // GAP-2 FIX: 429 thundering-herd backoff for mass-reconnect events.
+        //
+        // Problem: After a power outage, 200+ subscribers reconnect simultaneously.
+        // All devices are behind a single NAT IP — the backend IP-rate-limiter
+        // (500 req/min) throttles the burst. The old code had zero retry logic on
+        // HTTP 429, leaving users with a dead spinner and no feedback.
+        //
+        // Fix: Wrap both mac-auth and device-token-auth with fetchWithBackoff().
+        // On 429, wait 1s → 2s → 4s (3 attempts total) with ±500ms jitter to
+        // de-synchronise clients that all started retrying at exactly the same time.
+        // After 3 failed attempts the error propagates and the portal falls through
+        // to Layer 2 / shows the UI as normal — no silent dead spinner.
+        //
+        // Jitter formula: delay × (0.75 + Math.random() × 0.5)
+        //   → spreads retries across 75%–125% of the base delay window
+        //   → for delay=1000ms: 750ms–1250ms per client, so 200 clients
+        //     spread over a ~500ms window instead of hitting all at once.
+        const fetchWithBackoff = async (url: string, opts: RequestInit, maxRetries = 3): Promise<Response> => {
+          let delay = 1000; // 1s base
+          for (let attempt = 0; attempt < maxRetries; attempt++) {
+            const res = await fetch(url, opts);
+            if (res.status !== 429) return res;
+            if (attempt < maxRetries - 1) {
+              const jitter = delay * (0.75 + Math.random() * 0.5);
+              setAutoConnectStatus(`Network busy, retrying… (${attempt + 1}/${maxRetries - 1})`);
+              await new Promise(resolve => setTimeout(resolve, jitter));
+              delay *= 2; // exponential: 1s → 2s → 4s
+            }
+          }
+          // All retries exhausted — return the last 429 so callers handle it gracefully
+          return fetch(url, opts);
+        };
+
         const macAuthSignal = typeof AbortSignal !== "undefined" && AbortSignal.timeout
           ? AbortSignal.timeout(90_000)
           : undefined;
 
-        const macRes = await fetch(`${apiBase}/portal/mac-auth`, {
+        const macRes = await fetchWithBackoff(`${apiBase}/portal/mac-auth`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mac }),
@@ -631,9 +681,17 @@ const HotspotPortal = () => {
         // In both cases fall through to Layer 2: a valid device token may still grant access
         // (e.g. MAC randomization — new MAC, but token still valid).
         if (macRes.status === 403) {
+          // BUG-2 FIX: Check for slot_overflow before treating as generic mac_expired.
+          // slot_overflow = MAC is on owner's plan but all slots are full.
+          try {
+            const macData403 = await macRes.clone().json();
+            if (macData403.authFailReason === "slot_overflow") {
+              setSlotOwnerUsername(macData403.ownerUsername ?? null);
+              return "slot_overflow";
+            }
+          } catch { /* fall through */ }
           // MAC is recognised but subscription is expired — capture reason, then try Layer 2
           // If Layer 2 also fails we'll return mac_expired below
-          // (store it so we can use it as fallback at the end of Layer 2 block)
           ;(params as any)._macExpired = true;
         }
         if (macRes.status === 404 || macRes.status === 403) {
@@ -651,11 +709,14 @@ const HotspotPortal = () => {
       try {
         // BUG-NEW-A07 FIX (MEDIUM): Same 90-second AbortSignal timeout as mac-auth.
         // Device-token-auth also issues an OTP (120s TTL). Hanging fetch → expired OTP → infinite spinner.
+        // GAP-2 FIX: fetchWithBackoff defined in Layer 1 above applies here too.
         const tokenAuthSignal = typeof AbortSignal !== "undefined" && AbortSignal.timeout
           ? AbortSignal.timeout(90_000)
           : undefined;
 
-        const tokenRes = await fetch(`${apiBase}/portal/device-token-auth`, {
+        // GAP-2 FIX: Same 429 thundering-herd protection as Layer 1.
+        // fetchWithBackoff is defined inside attemptAutoReconnect so it's in scope here.
+        const tokenRes = await fetchWithBackoff(`${apiBase}/portal/device-token-auth`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token: storedToken, mac: mac || undefined }),
@@ -694,6 +755,11 @@ const HotspotPortal = () => {
         if (tokenRes.status === 401) {
           localStorage.removeItem(DEVICE_TOKEN_KEY);
           deleteCookie(DEVICE_TOKEN_KEY);
+          // BUG-9 FIX: Also clear the portal cookie — after 30+ days offline the
+          // local cookie is gone but backend may say "keep". Clearing ensures the
+          // next auth cycle issues a fresh token instead of leaving the subscriber
+          // stuck with no session and no explanation.
+          setCookie(COOKIE_KEY, "", -1);
           return "token_expired";
         }
       } catch {
@@ -771,7 +837,7 @@ const HotspotPortal = () => {
     const handleSwMessage = (event: MessageEvent) => {
       if (event.data?.type === "SESSION_EXPIRED") {
         setSubscriptionExpired(true);
-        setStep("packages");
+        setStep("select");
         toast({
           title: "⏰ Your session has expired",
           description: "Please renew your package to continue using the internet.",
@@ -796,7 +862,7 @@ const HotspotPortal = () => {
             setSubscriptionExpired(true);
             deleteCookie(COOKIE_KEY);
             notifySwToken(null);
-            setStep("packages");
+            setStep("select");
             toast({
               title: "⏰ Your session has expired",
               description: "Please renew your package to continue.",
@@ -811,7 +877,7 @@ const HotspotPortal = () => {
             setSubscriber(data.subscriber as Subscriber);
             if (data.portalOnly || data.subscriber?.status === "expired") {
               setSubscriptionExpired(true);
-              setStep("packages");
+              setStep("select");
               toast({
                 title: "⏰ Your package has expired",
                 description: "Please purchase a new package to restore access.",
@@ -834,28 +900,32 @@ const HotspotPortal = () => {
   // ── Initialisation ──────────────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
-      // Load packages first (needed for both auto-connect and manual flows)
-      const { data } = await supabase
-        .from("packages")
-        .select("*")
-        .in("type", ["hotspot", "both"])
-        .eq("active", true)
-        .order("price");
-      setPackages((data ?? []) as Package[]);
+      // Load packages + FWA settings in parallel (both are public, no auth needed)
+      const [pkgRes, fwaRes] = await Promise.allSettled([
+        fetch(`${apiBase}/portal/packages`).then(r => r.json()),
+        fetch(`${apiBase}/portal/fwa-settings`).then(r => r.json()),
+      ]);
 
-      // v3.17.0: Load Free WhatsApp settings (non-blocking)
-      try {
-        const fwaKeys = ["free_whatsapp_enabled", "free_whatsapp_daily_cap_mb", "free_whatsapp_window_days"];
-        const { data: fwaRows } = await supabase
-          .from("system_settings")
-          .select("key, value")
-          .in("key", fwaKeys);
-        const fwaMap: Record<string, string> = {};
-        for (const r of fwaRows ?? []) fwaMap[r.key] = r.value;
-        setFwaEnabled((fwaMap["free_whatsapp_enabled"] ?? "true").toLowerCase() !== "false");
-        setFwaCap(parseFloat(fwaMap["free_whatsapp_daily_cap_mb"] ?? "100") || 100);
-        setFwaDays(parseInt(fwaMap["free_whatsapp_window_days"] ?? "3", 10) || 3);
-      } catch { /* non-fatal */ }
+      let loadedPackages: Package[] = [];
+      if (pkgRes.status === "fulfilled" && pkgRes.value?.success) {
+        const all: Package[] = pkgRes.value.packages ?? [];
+        loadedPackages = all.filter(p => p.type === "hotspot" || p.type === "both");
+        setPackages(loadedPackages);
+      }
+
+      // Pre-select package when UserPortal redirects with ?pkg=<id>
+      const preselect = new URLSearchParams(window.location.search).get("pkg");
+      if (preselect && loadedPackages.length) {
+        const match = loadedPackages.find(p => String(p.id) === preselect);
+        if (match) { setSelectedPkg(match); setStep("phone"); return; }
+      }
+
+      // v3.17.0: Apply Free WhatsApp settings from backend
+      if (fwaRes.status === "fulfilled" && fwaRes.value?.success) {
+        setFwaEnabled(fwaRes.value.enabled !== false);
+        setFwaCap(fwaRes.value.dailyCapMb ?? 100);
+        setFwaDays(fwaRes.value.windowDays ?? 3);
+      }
 
       const params = hotspotParams.current;
 
@@ -1614,19 +1684,34 @@ const HotspotPortal = () => {
       )}
 
       <div className="w-full max-w-lg space-y-6">
-        {/* Header */}
+        {/* Header — uses branding loaded from /api/portal/branding */}
         <div className="text-center space-y-2">
-          <div className="h-14 w-14 rounded-2xl bg-primary/20 flex items-center justify-center mx-auto mb-4">
-            <Wifi className="h-7 w-7 text-primary" />
-          </div>
-          <h1 className="text-2xl font-bold text-gradient">Connect to WiFi</h1>
+          {branding.logo_url ? (
+            <img
+              src={branding.logo_url}
+              alt={branding.company_name}
+              className="h-14 w-auto object-contain mx-auto mb-4 rounded-xl"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+            />
+          ) : (
+            <div className="h-14 w-14 rounded-2xl bg-primary/20 flex items-center justify-center mx-auto mb-4">
+              <Wifi className="h-7 w-7 text-primary" />
+            </div>
+          )}
+          <h1 className="text-2xl font-bold text-gradient">
+            {branding.company_name !== "WiFi Billing System" ? branding.company_name : branding.portal_welcome}
+          </h1>
           {step === "select" && (
             <p className="text-sm text-muted-foreground">
               {authFailReason === "mac_expired" || authFailReason === "token_expired"
-                ? "Renew your subscription to get back online"
+                ? "Ready to get back online? Pick a package below 👇"
                 : authFailReason === "new_device"
-                ? "Select a package to connect"
-                : "Select a package & pay via M-Pesa"}
+                ? "Choose a package and you'll be online in under a minute."
+                : authFailReason === "slot_overflow"
+                ? "Get your own plan and stay online anytime"
+                : authFailReason === "failed"
+                ? "Something went wrong — please try again or select a package."
+                : branding.portal_subtext || "Pick a package & pay via M-Pesa. You're online in seconds."}
             </p>
           )}
           {step === "login"   && <p className="text-sm text-muted-foreground">Sign in with your phone &amp; password</p>}
@@ -1635,35 +1720,63 @@ const HotspotPortal = () => {
           {step === "voucher" && <p className="text-sm text-muted-foreground">Redeem your pre-paid WiFi voucher code</p>}
         </div>
 
-        {/* Package Selection */}
+        {/* ═══════════════════════════════════════════════════════════════════
+             PACKAGE SELECTION — The face of your ISP.
+             
+             LOGIC (v3.20.10):
+               • Layer 1 (MAC auth) fires transparently on mount — user never sees
+                 this screen if their package is active.  Only reaches here when:
+                   a) new device (no MAC record)
+                   b) subscription expired
+                   c) token invalid / first visit
+               • Three bold CTAs below the packages: Login · Voucher · Recover
+                 Each is a full-width button — not a tiny link — so users find them
+                 immediately on a small screen without reading fine print.
+             ═══════════════════════════════════════════════════════════════════ */}
         {step === "select" && (
-          <div className="space-y-3">
+          <div className="space-y-4">
 
-            {/* BUG-PWA-02 FIX: Contextual banner — tells user exactly why they are here */}
+            {/* ── Context banner ─────────────────────────────────────────── */}
             {(authFailReason === "mac_expired" || authFailReason === "token_expired") && (
-              <div className="glass-card p-4 sm:p-6 border-amber-500/30 bg-amber-500/5 flex items-start gap-3">
-                <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-amber-300">Your subscription has expired</p>
-                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                    Select a package below to renew. Your device will reconnect automatically after payment.
+              <div className="flex items-start gap-3 p-4 rounded-2xl border border-amber-500/40 bg-gradient-to-br from-amber-500/10 to-orange-500/5">
+                <div className="h-9 w-9 rounded-xl bg-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                  <AlertTriangle className="h-4.5 w-4.5 text-amber-400" style={{width:"1.125rem",height:"1.125rem"}} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-amber-300">Your package has expired</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                    Pick a package below — you'll be back online in under a minute.
                   </p>
                 </div>
               </div>
             )}
 
-            {authFailReason === "new_device" && (
-              <div className="glass-card p-4 sm:p-6 border-primary/30 bg-primary/5 flex items-start gap-3">
-                <Wifi className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-sm font-semibold">Welcome! Choose a package to get online</p>
-                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                    Already subscribed on another device?{" "}
-                    <button className="text-primary underline font-medium" onClick={() => setStep("login")}>
-                      Sign in
-                    </button>{" "}
-                    or{" "}
-                    <button className="text-primary underline font-medium" onClick={() => { setStep("recover"); setRecoverError(""); setRecoverNeedsPhone(false); }}>
+            {authFailReason === "slot_overflow" && (
+              <div className="flex items-start gap-3 p-4 rounded-2xl border border-blue-500/40 bg-gradient-to-br from-blue-500/10 to-indigo-500/5">
+                <div className="h-9 w-9 rounded-xl bg-blue-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                  <Wifi className="h-4 w-4 text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold">You're on {slotOwnerUsername ?? "someone"}'s WiFi plan</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                    All device slots are taken. Get your own plan for guaranteed, uninterrupted access.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {(authFailReason === "new_device" || authFailReason === "no_credentials") && (
+              <div className="flex items-start gap-3 p-4 rounded-2xl border border-primary/30 bg-primary/5">
+                <div className="h-9 w-9 rounded-xl bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
+                  <Wifi className="h-4 w-4 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold">Welcome! Pick a plan to get online</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Already subscribed?{" "}
+                    <button className="text-primary underline font-semibold" onClick={() => setStep("login")}>Sign in</button>
+                    {" "}or{" "}
+                    <button className="text-primary underline font-semibold" onClick={() => { setStep("recover"); setRecoverError(""); setRecoverNeedsPhone(false); }}>
                       recover with M-Pesa code
                     </button>.
                   </p>
@@ -1671,64 +1784,129 @@ const HotspotPortal = () => {
               </div>
             )}
 
-            {packages.map((pkg) => (
-              <button
-                key={pkg.id}
-                onClick={() => { setSelectedPkg(pkg); setStep("phone"); }}
-                // TOUCH-01: min 56px height, active:scale feedback, touch-manipulation
-                // disables the 300ms tap delay on Android browsers without needing
-                // a separate FastClick lib. active:brightness gives instant visual
-                // feedback on tap — critical for perceived speed on slow networks
-                // where the next-step API call may take 1–2 seconds.
-                className="w-full glass-card p-4 sm:p-6 text-left transition-all duration-150 hover:border-primary/50 active:scale-[0.97] active:brightness-90 min-h-[56px]"
-                style={{ touchAction: "manipulation" }}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="font-bold text-foreground truncate">{pkg.name}</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      ↓{pkg.speed_down} · {pkg.duration_days}d · {pkg.max_devices} device{pkg.max_devices > 1 ? "s" : ""}
-                    </p>
+            {/* ── Package cards ─────────────────────────────────────────── */}
+            <div className="space-y-2.5">
+              {packages.map((pkg, idx) => (
+                <button
+                  key={pkg.id}
+                  onClick={() => { setSelectedPkg(pkg); setStep("phone"); }}
+                  className="group w-full text-left rounded-2xl border border-border/60 bg-card/60 backdrop-blur-sm px-4 py-4 transition-all duration-150 hover:border-primary/60 hover:bg-primary/5 active:scale-[0.98] active:brightness-90 min-h-[64px]"
+                  style={{ touchAction: "manipulation" }}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {/* Speed tier indicator dot */}
+                      <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${
+                        idx === 0 ? "bg-emerald-400" :
+                        idx === 1 ? "bg-blue-400" :
+                        idx === 2 ? "bg-violet-400" : "bg-primary"
+                      }`} />
+                      <div className="min-w-0">
+                        <p className="font-bold text-sm text-foreground truncate">{pkg.name}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                          ↓{pkg.speed_down} · {pkg.duration_days} day{pkg.duration_days !== 1 ? "s" : ""} · {pkg.max_devices} device{pkg.max_devices > 1 ? "s" : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="text-right">
+                        <p className="text-base font-extrabold text-primary leading-none">
+                          KES {Number(pkg.price).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="h-7 w-7 rounded-full bg-primary/10 group-hover:bg-primary/20 flex items-center justify-center transition-colors">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                          <path d="M3 7h8M7.5 3.5L11 7l-3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-primary"/>
+                        </svg>
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-lg font-extrabold text-primary shrink-0">KES {Number(pkg.price).toLocaleString()}</p>
-                </div>
-              </button>
-            ))}
-            <div className="pt-2 text-center space-y-1">
-              {/* TOUCH-02: min-h-[44px] on all tap targets — WCAG 2.5.5 / Apple HIG */}
-              <button
-                onClick={() => setStep("login")}
-                className="text-xs text-primary hover:underline flex items-center gap-1.5 mx-auto min-h-[44px] px-3"
-                style={{ touchAction: "manipulation" }}
-              >
-                <LogIn className="h-3.5 w-3.5" />Already have an account? Sign in
-              </button>
-              <button
-                onClick={() => { setStep("recover"); setRecoverError(""); setRecoverNeedsPhone(false); }}
-                className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1.5 mx-auto transition-colors min-h-[44px] px-3"
-                style={{ touchAction: "manipulation" }}
-              >
-                <KeyRound className="h-3.5 w-3.5" />Lost access? Recover with M-Pesa code
-              </button>
-              <button
-                onClick={() => { setStep("voucher"); setVoucherError(""); setVoucherCode(""); setVoucherPhone(""); setVoucherName(""); }}
-                className="text-xs text-muted-foreground hover:text-amber-400 flex items-center gap-1.5 mx-auto transition-colors min-h-[44px] px-3"
-                style={{ touchAction: "manipulation" }}
-              >
-                <Ticket className="h-3.5 w-3.5" />Have a voucher code?
-              </button>
+                </button>
+              ))}
             </div>
 
-            {/* v3.17.0: Free WhatsApp Chat — secondary, below packages */}
+            {/* ══════════════════════════════════════════════════════════════
+                THREE PRIMARY ACTION BUTTONS
+                These are full-width, high-contrast buttons — NOT tiny links.
+                Login · Voucher · Recover must be immediately obvious on any
+                phone screen. First-time visitors and returning users with
+                expired sessions need to find these without hunting.
+                ══════════════════════════════════════════════════════════════ */}
+            <div className="pt-1 space-y-2.5">
+
+              {/* Divider */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-border/60" />
+                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest">or</span>
+                <div className="flex-1 h-px bg-border/60" />
+              </div>
+
+              {/* ── SIGN IN ── */}
+              <button
+                onClick={() => setStep("login")}
+                className="group w-full flex items-center gap-3.5 px-4 py-3.5 min-h-[54px] rounded-2xl border border-border/60 bg-card/40 hover:border-primary/50 hover:bg-primary/5 active:scale-[0.98] transition-all duration-150"
+                style={{ touchAction: "manipulation" }}
+              >
+                <div className="h-9 w-9 rounded-xl bg-primary/15 group-hover:bg-primary/25 flex items-center justify-center shrink-0 transition-colors">
+                  <LogIn className="h-4 w-4 text-primary" />
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-sm font-bold text-foreground leading-none">Sign In</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Use your phone &amp; password</p>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-muted-foreground/40 shrink-0">
+                  <path d="M5 8h6M8 5l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+
+              {/* ── VOUCHER ── */}
+              <button
+                onClick={() => { setStep("voucher"); setVoucherError(""); setVoucherCode(""); setVoucherPhone(""); setVoucherName(""); }}
+                className="group w-full flex items-center gap-3.5 px-4 py-3.5 min-h-[54px] rounded-2xl border border-amber-500/30 bg-amber-500/5 hover:border-amber-500/60 hover:bg-amber-500/10 active:scale-[0.98] transition-all duration-150"
+                style={{ touchAction: "manipulation" }}
+              >
+                <div className="h-9 w-9 rounded-xl bg-amber-500/20 group-hover:bg-amber-500/30 flex items-center justify-center shrink-0 transition-colors">
+                  <Ticket className="h-4 w-4 text-amber-400" />
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-sm font-bold text-amber-300 leading-none">Use a Voucher</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Redeem a pre-paid WiFi code</p>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-muted-foreground/40 shrink-0">
+                  <path d="M5 8h6M8 5l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+
+              {/* ── RECOVER ── */}
+              <button
+                onClick={() => { setStep("recover"); setRecoverError(""); setRecoverNeedsPhone(false); }}
+                className="group w-full flex items-center gap-3.5 px-4 py-3.5 min-h-[54px] rounded-2xl border border-border/40 bg-card/20 hover:border-muted-foreground/30 hover:bg-muted/20 active:scale-[0.98] transition-all duration-150"
+                style={{ touchAction: "manipulation" }}
+              >
+                <div className="h-9 w-9 rounded-xl bg-muted/40 group-hover:bg-muted/60 flex items-center justify-center shrink-0 transition-colors">
+                  <KeyRound className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-sm font-bold text-foreground leading-none">Lost Access?</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Recover with M-Pesa transaction code</p>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-muted-foreground/40 shrink-0">
+                  <path d="M5 8h6M8 5l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+
+            </div>
+
+            {/* ── Free WhatsApp — below the fold, secondary ─────────────── */}
             {fwaEnabled && (
               <>
-                <div className="flex items-center gap-3 my-1">
-                  <div className="flex-1 h-px bg-border" />
-                  <span className="text-xs text-muted-foreground">or stay connected</span>
-                  <div className="flex-1 h-px bg-border" />
+                <div className="flex items-center gap-3 my-1 pt-1">
+                  <div className="flex-1 h-px bg-border/40" />
+                  <span className="text-[10px] text-muted-foreground">stay connected for free</span>
+                  <div className="flex-1 h-px bg-border/40" />
                 </div>
-                <div className="rounded-xl border border-border bg-muted/30 p-4 sm:p-6">
-                  <div className="flex items-center gap-2 mb-1">
+                <div className="rounded-2xl border border-border/50 bg-muted/20 p-4">
+                  <div className="flex items-center gap-2.5 mb-1">
                     <span className="text-base">💬</span>
                     <span className="text-sm font-semibold text-foreground">Free WhatsApp Chat</span>
                   </div>
@@ -1736,13 +1914,14 @@ const HotspotPortal = () => {
                     Text &amp; voice notes only · {fwaCap}MB/day · {fwaDays} days free
                   </p>
                   {fwaStatus && (
-                    <p className="text-xs text-green-600 dark:text-green-400 mb-2">
+                    <p className="text-xs text-emerald-400 mb-2">
                       ✓ Active · {fwaStatus.daysRemaining} day(s) left · {Math.round(fwaStatus.dataRemainingMb)}MB remaining today
                     </p>
                   )}
                   <button
                     onClick={() => { setFwaError(""); setFwaOtpSent(false); setStep("fwa_register"); }}
-                    className="text-xs text-primary hover:underline underline-offset-2"
+                    className="text-xs text-primary hover:underline underline-offset-2 font-medium"
+                    style={{ touchAction: "manipulation" }}
                   >
                     {fwaStatus ? "Manage free access →" : "Continue with Free WhatsApp →"}
                   </button>
@@ -1751,7 +1930,6 @@ const HotspotPortal = () => {
             )}
           </div>
         )}
-
         {/* Free WhatsApp registration — phone + OTP */}
         {step === "fwa_register" && (
           <div className="glass-card p-6 space-y-5">
@@ -2336,7 +2514,7 @@ const HotspotPortal = () => {
                 <span className="text-lg">⏰</span>
                 <div>
                   <strong>Your package has expired.</strong> Your internet access has been paused.
-                  {" "}<button className="underline font-semibold" onClick={() => setStep("packages")}>Renew now</button> to continue browsing.
+                  {" "}<button className="underline font-semibold" onClick={() => setStep("select")}>Renew now</button> to continue browsing.
                 </div>
               </div>
             )}
@@ -2355,10 +2533,16 @@ const HotspotPortal = () => {
                 }
               });
             }}
-            onBuyPackage={(pkg: Package) => {
-              setSelectedPkg(pkg);
-              setPhone(subscriber.phone);
-              setStep("phone");
+            onBuyPackage={(pkg: Package | null) => {
+              // BUG-2 FIX: null means "go to package select" (from shared-plan CTA),
+              // not pre-selecting a specific package.
+              if (pkg) {
+                setSelectedPkg(pkg);
+                setPhone(subscriber.phone);
+                setStep("phone");
+              } else {
+                setStep("select");
+              }
             }}
             onLogout={handleLogout}
             toast={toast}

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * src/pages/APdeskPage.tsx — v3.6.0
  *
@@ -33,16 +32,17 @@ import {
   RotateCw, AlertCircle, CheckCircle2, Edit, Phone, LocateFixed,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { getToken } from "@/lib/authClient";
+import DumbApTab from "@/components/DumbApTab";
 
 const API = (window as Window & { __MIKROBILL_API__?: string }).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
 async function apiFetch(path: string, opts: RequestInit = {}) {
-  const { data: { session } } = await supabase.auth.getSession();
+  const token = getToken();
   const res = await fetch(`${API}${path}`, {
     ...opts,
     headers: {
       "Content-Type": "application/json",
-      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(opts.headers ?? {}),
     },
   });
@@ -491,6 +491,7 @@ export default function APdeskPage() {
           <TabsList>
             <TabsTrigger value="profiles">AP Profiles</TabsTrigger>
             <TabsTrigger value="access-points">All Access Points</TabsTrigger>
+            <TabsTrigger value="dumb-aps">Dumb APs</TabsTrigger>
           </TabsList>
 
           {/* ── AP Profiles ───────────────────────────────────────────────────── */}
@@ -746,6 +747,11 @@ export default function APdeskPage() {
                 </div>
               ))}
             </div>
+          </TabsContent>
+
+          {/* ── Dumb APs (VLAN-polled, non-APdesk APs) ────────────────────── */}
+          <TabsContent value="dumb-aps" className="mt-4">
+            <DumbApTab />
           </TabsContent>
         </Tabs>
       </div>

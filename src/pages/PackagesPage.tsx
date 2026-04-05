@@ -1,9 +1,8 @@
-// @ts-nocheck
 import { useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { usePackages, formatKES } from "@/hooks/useDatabase";
-import { supabase } from "@/integrations/supabase/client";
-import { Zap, Plus, Pencil, Save, Loader2, Wifi, Network, Radio } from "lucide-react";
+import { authClient, getToken } from "@/lib/authClient";
+import { Zap, Plus, Pencil, Save, Loader2, Wifi, Network, Radio, HelpCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,19 +11,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import StatusBadge from "@/components/StatusBadge";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 
 const EMPTY_PKG = {
-  name: "", price: 0, duration_days: 30, speed_down: "10M", speed_up: "5M",
+  name: "", price: 0, duration_days: 30, duration_unit: "days" as "minutes" | "hours" | "days" | "months",
+  speed_down: "10M", speed_up: "5M",
   max_devices: 2, type: "hotspot", tier: "basic", active: true,
   pppoe_profile: "", hotspot_profile: "", burst_down: "", burst_up: "",
   burst_threshold: "", burst_time_s: "" as string | number,
   data_cap_gb: "" as string | number, shared_users_max: 1, description: "",
   max_connections_per_user: 300 as number | null,
   mesh_vlan_id: "" as string | number,
+};
+
+const DURATION_UNITS = [
+  { value: "minutes", label: "Minutes" },
+  { value: "hours",   label: "Hours"   },
+  { value: "days",    label: "Days"    },
+  { value: "months",  label: "Months"  },
+];
+
+const formatDuration = (value: number, unit?: string) => {
+  const u = unit || "days";
+  const singular = u.replace(/s$/, "");
+  return `${value} ${value === 1 ? singular : u}`;
 };
 
 const tierColors: Record<string, string> = {
@@ -48,6 +62,7 @@ const PackagesPage = () => {
     setEditId(pkg.id);
     setForm({
       name: pkg.name ?? "", price: pkg.price ?? 0, duration_days: pkg.duration_days ?? 30,
+      duration_unit: pkg.duration_unit ?? "days",
       speed_down: pkg.speed_down ?? "10M", speed_up: pkg.speed_up ?? "5M",
       max_devices: pkg.max_devices ?? 2, type: pkg.type ?? "hotspot", tier: pkg.tier ?? "basic",
       active: pkg.active ?? true, pppoe_profile: pkg.pppoe_profile ?? "",
@@ -89,22 +104,25 @@ const PackagesPage = () => {
       // We query mesh_node_settings for any management_vlan that equals this VLAN ID.
       // The check is non-blocking (soft warning + hard block) — it runs before the DB insert.
       try {
-        const { data: conflictingNodes } = await supabase
-          .from("mesh_node_settings")
-          .select("node_id, management_vlan, nodes(name, meshes(name))")
-          .eq("management_vlan", vlanNum)
-          .limit(3);
-        if (conflictingNodes && conflictingNodes.length > 0) {
-          const nodeNames = conflictingNodes
-            .map((n: any) => n.nodes?.name ?? n.node_id)
-            .join(", ");
-          toast({
-            title: "VLAN Conflict — D-01",
-            description: `VLAN ID ${vlanNum} is the management VLAN for node(s): ${nodeNames}. Using it as a subscriber data VLAN would break AP management connectivity. Choose a different VLAN ID.`,
-            variant: "destructive",
-          });
-          setSaving(false);
-          return;
+        const vlanAPI = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
+        const vlanRes = await fetch(
+          `${vlanAPI}/api/admin/data/mesh-node-settings?management_vlan=${vlanNum}&limit=3`,
+          { headers: { Authorization: `Bearer ${authClient.getToken()}` } }
+        );
+        if (vlanRes.ok) {
+          const conflictingNodes = await vlanRes.json();
+          if (Array.isArray(conflictingNodes) && conflictingNodes.length > 0) {
+            const nodeNames = conflictingNodes
+              .map((n: any) => n.nodes?.name ?? n.node_id)
+              .join(", ");
+            toast({
+              title: "VLAN Conflict — D-01",
+              description: `VLAN ID ${vlanNum} is the management VLAN for node(s): ${nodeNames}. Using it as a subscriber data VLAN would break AP management connectivity. Choose a different VLAN ID.`,
+              variant: "destructive",
+            });
+            setSaving(false);
+            return;
+          }
         }
       } catch (_vlanCheckErr) {
         // Non-fatal: if the check fails (e.g. mesh_node_settings not yet migrated),
@@ -113,38 +131,97 @@ const PackagesPage = () => {
     }
     setSaving(true);
     try {
-      // Only send columns that exist in the packages table schema
       const payload: any = {
-        name: form.name.trim(),
-        price: Number(form.price),
-        duration_days: Number(form.duration_days),
-        speed_down: form.speed_down,
-        speed_up: form.speed_up,
-        max_devices: Number(form.max_devices),
-        type: form.type,
-        tier: form.tier,
-        active: form.active,
+        name: form.name.trim(), price: Number(form.price), duration_days: Number(form.duration_days),
+        duration_unit: form.duration_unit,
+        speed_down: form.speed_down, speed_up: form.speed_up, max_devices: Number(form.max_devices),
+        type: form.type, tier: form.tier, active: form.active,
+        pppoe_profile: form.pppoe_profile || null, hotspot_profile: form.hotspot_profile || null,
+        burst_down: form.burst_down || null, burst_up: form.burst_up || null,
+        burst_threshold: form.burst_threshold || null,
+        burst_time_s: form.burst_time_s ? Number(form.burst_time_s) : null,
+        data_cap_gb: form.data_cap_gb ? Number(form.data_cap_gb) : null,
+        shared_users_max: Number(form.shared_users_max), description: form.description || null,
+        max_connections_per_user: form.max_connections_per_user != null ? Number(form.max_connections_per_user) : null,
+        mesh_vlan_id: form.mesh_vlan_id !== "" ? Number(form.mesh_vlan_id) : null,
       };
+      const pkgAPI = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
+      const pkgToken = authClient.getToken();
       if (editId) {
-        const { error } = await supabase.from("packages").update(payload).eq("id", editId);
-        if (error) throw error;
+        const res = await fetch(`${pkgAPI}/api/admin/data/packages/${editId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${pkgToken}` },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw Object.assign(new Error(errBody.error ?? `HTTP ${res.status}`), { status: res.status, errBody });
+        }
         toast({ title: "Package Updated", description: `${form.name} saved.` });
       } else {
-        const { error } = await supabase.from("packages").insert(payload);
-        if (error) throw error;
+        const res = await fetch(`${pkgAPI}/api/admin/data/packages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${pkgToken}` },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw Object.assign(new Error(errBody.error ?? `HTTP ${res.status}`), { status: res.status, errBody });
+        }
         toast({ title: "Package Created", description: `${form.name} created.` });
       }
       queryClient.invalidateQueries({ queryKey: ["packages"] });
       setOpen(false);
     } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      // B-02 FIX (Round 23): Translate PostgreSQL unique constraint violation (code 23505)
+      // for mesh_vlan_id into a clear user-facing 409-style error instead of a cryptic
+      // Supabase error message. The race condition: two admins simultaneously save a
+      // package with the same VLAN ID — one wins, the other sees code 23505.
+      const isVlanConflict =
+        err?.status === 409 ||
+        err?.code === "23505" ||
+        (err?.message || "").includes("mesh_vlan_id") ||
+        ((err?.message || "").includes("unique") && (err?.message || "").includes("vlan")) ||
+        (err?.errBody?.error || "").includes("mesh_vlan_id");
+      if (isVlanConflict) {
+        toast({
+          title: "VLAN ID Already Taken — B-02",
+          description: `VLAN ID ${form.mesh_vlan_id} was just assigned to another package by a concurrent save. Please choose a different VLAN ID and try again.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      }
     } finally {
       setSaving(false);
     }
   };
 
   const toggleActive = async (pkg: any) => {
-    await supabase.from("packages").update({ active: !pkg.active }).eq("id", pkg.id);
+    // BUG-S2-003 FIX v3.19.1: Direct supabase.from("packages").update() bypasses the backend
+    // and the packages.active ↔ is_active sync trigger may not fire reliably via PostgREST
+    // (RLS policies can intercept before triggers on some Supabase configurations).
+    // Route through the admin backend so the trigger fires on the correct connection.
+    try {
+      const token = getToken();
+      const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+      await fetch(`${API}/admin/packages/${pkg.id}/toggle-active`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ active: !pkg.active }),
+      });
+    } catch (_) {
+      // Fallback: direct REST API PATCH
+      const fallbackAPI = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
+      await fetch(`${fallbackAPI}/api/admin/data/packages/${pkg.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authClient.getToken()}` },
+        body: JSON.stringify({ active: !pkg.active }),
+      }).catch(() => {});
+    }
     queryClient.invalidateQueries({ queryKey: ["packages"] });
   };
 
@@ -181,7 +258,7 @@ const PackagesPage = () => {
                   {pkg.type === "both" && <Badge variant="outline" className="bg-success/10 text-success border-success/30 text-[10px]">Both</Badge>}
                 </div>
                 <p className="text-3xl font-extrabold text-gradient mb-1">{formatKES(Number(pkg.price))}</p>
-                <p className="text-xs text-muted-foreground mb-4">{pkg.duration_days} day{pkg.duration_days > 1 ? "s" : ""}</p>
+                <p className="text-xs text-muted-foreground mb-4">{formatDuration(pkg.duration_days, pkg.duration_unit)}</p>
                 <div className="space-y-2 flex-1 text-sm">
                   <div className="flex justify-between"><span className="text-muted-foreground">Download</span><span className="font-semibold">{pkg.speed_down}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Upload</span><span className="font-semibold">{pkg.speed_up}</span></div>
@@ -230,8 +307,26 @@ const PackagesPage = () => {
                   <Input type="number" placeholder="500" value={form.price} onChange={(e) => set("price")(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Duration (days)</Label>
-                  <Input type="number" placeholder="30" value={form.duration_days} onChange={(e) => set("duration_days")(e.target.value)} />
+                  <Label>Duration</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      min="1"
+                      placeholder="30"
+                      value={form.duration_days}
+                      onChange={(e) => set("duration_days")(e.target.value)}
+                      className="flex-1"
+                    />
+                    <Select value={form.duration_unit} onValueChange={set("duration_unit")}>
+                      <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {DURATION_UNITS.map((u) => (
+                          <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">e.g. 60 minutes, 24 hours, 30 days, 1 month</p>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Max Devices</Label>
@@ -258,7 +353,19 @@ const PackagesPage = () => {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Tier</Label>
+                  <Label className="flex items-center gap-1.5">
+                    Tier
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs text-xs">
+                          Visual badge shown on the subscriber portal. Has <strong>no effect</strong> on bandwidth, pricing, or routing — it is purely cosmetic.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </Label>
                   <Select value={form.tier} onValueChange={set("tier")}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -295,11 +402,7 @@ const PackagesPage = () => {
                 <div className="space-y-1.5">
                   <Label>Shared Users Max</Label>
                   <Input type="number" min="1" placeholder="1" value={form.shared_users_max} onChange={(e) => set("shared_users_max")(e.target.value)} />
-                  <p className="text-[10px] text-muted-foreground">simultaneous-use (PPPoE)</p>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Data Cap (GB, blank = unlimited)</Label>
-                  <Input type="number" placeholder="50" value={form.data_cap_gb} onChange={(e) => set("data_cap_gb")(e.target.value || "")} />
+                  <p className="text-[10px] text-muted-foreground">PPPoE simultaneous-use limit (<code>/ppp profile</code> only-one)</p>
                 </div>
               </div>
             </TabsContent>
@@ -325,6 +428,15 @@ const PackagesPage = () => {
                   <Label>Burst Time (seconds)</Label>
                   <Input type="number" placeholder="10" value={form.burst_time_s} onChange={(e) => set("burst_time_s")(e.target.value)} />
                   <p className="text-[10px] text-muted-foreground">averaging window</p>
+                </div>
+              </div>
+              <div className="border-t border-border/50 pt-4">
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="space-y-1.5">
+                    <Label>Data Cap (GB)</Label>
+                    <Input type="number" placeholder="blank = unlimited" value={form.data_cap_gb} onChange={(e) => set("data_cap_gb")(e.target.value || "")} />
+                    <p className="text-[10px] text-muted-foreground">Total data limit per subscription period</p>
+                  </div>
                 </div>
               </div>
               <div className="border-t border-border/50 pt-4">
@@ -362,6 +474,7 @@ const PackagesPage = () => {
                 </div>
               </div>
             </TabsContent>
+          </Tabs>
             <TabsContent value="meshdesk" className="space-y-4">
               <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-xs text-cyan-300">
                 <strong>MeshDesk VLAN QoS</strong> — Assign this package to an 802.1Q VLAN so subscribers
@@ -377,12 +490,12 @@ const PackagesPage = () => {
                     type="number"
                     min={2}
                     max={4094}
-                    placeholder="e.g. 10 (5Mbps), 20 (10Mbps)"
+                    placeholder="e.g. 5 (3Mbps), 10 (5Mbps), 20 (10Mbps)"
                     value={form.mesh_vlan_id}
                     onChange={(e) => set("mesh_vlan_id")(e.target.value === "" ? "" : Number(e.target.value))}
                   />
                   <p className="text-[10px] text-muted-foreground">
-                    Must be unique across all packages. Suggested: 5Mbps→10, 10Mbps→20, 20Mbps→30.
+                    Must be unique across all packages. Suggested: 3Mbps→5, 5Mbps→10, 10Mbps→20, 20Mbps→30.
                     Range 2–4094. VLAN 1 is reserved for management.
                   </p>
                 </div>
@@ -395,6 +508,7 @@ const PackagesPage = () => {
                     <SelectTrigger><SelectValue placeholder="Choose preset" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">None (MikroTik-only)</SelectItem>
+                      <SelectItem value="5">5 — 3 Mbps tier</SelectItem>
                       <SelectItem value="10">10 — 5 Mbps tier</SelectItem>
                       <SelectItem value="20">20 — 10 Mbps tier</SelectItem>
                       <SelectItem value="30">30 — 20 Mbps tier</SelectItem>
@@ -416,7 +530,6 @@ const PackagesPage = () => {
                 <p>4. Reload FreeRADIUS: <code>sudo systemctl reload freeradius</code></p>
               </div>
             </TabsContent>
-          </Tabs>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving} className="gap-2">

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * KYCPage.tsx — v2.1.0
  *
@@ -14,17 +13,49 @@ import { useState, useMemo } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { useKycRecords } from "@/hooks/useDatabase";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useQueryClient } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CheckCircle, XCircle, FileText, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
+import { getToken } from "@/lib/authClient";
 
 const KYCPage = () => {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
   const { data: kycRecords = [], isLoading } = useKycRecords();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const apiBase = () => (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+
+  // BUG-P3-CRIT-03 FIX: Verify button previously had no onClick handler.
+  const handleVerify = async (kyc: any) => {
+    setActionLoading(`verify-${kyc.id}`);
+    try {
+      const res = await fetch(`${apiBase()}/admin/kyc/${kyc.id}/verify`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${await getToken()}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to verify");
+      toast({ title: "KYC Verified", description: `${kyc.full_name} marked as verified.` });
+      queryClient.invalidateQueries({ queryKey: ["kyc"] });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally { setActionLoading(null); }
+  };
+
+  // BUG-P3-CRIT-03 FIX: View ID button previously had no onClick handler.
+  const handleViewId = (kyc: any) => {
+    // Open KYC document viewer — fetch from /api/admin/kyc/:id to get doc info
+    const url = `${apiBase()}/admin/kyc/${kyc.id}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
 
   const filtered = useMemo(() => {
     if (!debouncedSearch) return kycRecords as any[];
@@ -117,6 +148,7 @@ const KYCPage = () => {
                           size="sm"
                           className="h-7 text-xs gap-1"
                           aria-label={`View ID document for ${kyc.full_name}`}
+                          onClick={() => handleViewId(kyc)}
                         >
                           <FileText className="h-3 w-3" aria-hidden="true" />
                           <span className="hidden sm:inline">View ID</span>
@@ -127,6 +159,8 @@ const KYCPage = () => {
                             size="sm"
                             className="h-7 text-xs text-green-500 hover:text-green-500"
                             aria-label={`Verify KYC record for ${kyc.full_name}`}
+                            disabled={actionLoading === `verify-${kyc.id}`}
+                            onClick={() => handleVerify(kyc)}
                           >
                             Verify
                           </Button>

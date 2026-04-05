@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * src/pages/MikrotikScriptPage.tsx
  *
@@ -16,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Terminal, Download, Copy, RefreshCw, CheckCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-import { supabase } from "@/integrations/supabase/client";
+import { getToken } from "@/lib/authClient";
 
 const DEFAULT_FORM = {
   radiusHost:         "",
@@ -54,8 +53,7 @@ const MikrotikScriptPage = () => {
     setLoading(true);
     try {
       const apiBase = import.meta.env.VITE_BACKEND_URL ?? "/api";
-      const session = await supabase.auth.getSession();
-      const token   = session.data.session?.access_token ?? "";
+      const token = getToken() ?? "";
 
       const res = await fetch(`${apiBase}/admin/mikrotik/setup-script`, {
         method:  "POST",

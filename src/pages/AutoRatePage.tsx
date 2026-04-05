@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * frontend/src/pages/AutoRatePage.tsx  — v3.5.0
  *
@@ -15,7 +14,7 @@
 
 import { useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
-import { supabase } from "@/integrations/supabase/client";
+import { getToken } from "@/lib/authClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Table, TableBody, TableCell, TableHead,
@@ -194,32 +193,35 @@ function RateBar({ cur, max, label, colorClass }: {
   );
 }
 
+// ── API helper ────────────────────────────────────────────────────────────────
+const API = (window as Window & { __MIKROBILL_API__?: string }).__MIKROBILL_API__
+  ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+
+async function apiFetch(path: string) {
+  const token = getToken();
+  const res = await fetch(`${API}${path}`, {
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 // ── Data hooks ────────────────────────────────────────────────────────────────
+// PHASE8-FIX: Replaced dead supabase.from("router_wan_config") call with
+// GET /api/admin/routers/wan/summary (wanSpeed.js). The supabase client was
+// removed from this project; using it here caused a runtime ReferenceError
+// ("supabase is not defined") that crashed the entire AutoRate page.
 const useWanSummary = () => useQuery<RouterWanRow[]>({
   queryKey: ["wan_summary_v350"],
   queryFn: async () => {
-    const { data, error } = await supabase
-      .from("router_wan_config")
-      .select(`
-        router_id,
-        wan_type, autorate_enabled,
-        max_bandwidth_mbps, min_bandwidth_mbps,
-        upload_max_mbps, upload_min_mbps,
-        current_down_mbps, current_up_mbps,
-        soft_warn_ratio, soft_panic_ratio,
-        load_gate_pct, autorate_tick_s,
-        last_owd_delta_down_ms, last_owd_delta_up_ms,
-        owd_stat_down_ms, owd_stat_up_ms,
-        last_zone_down, last_zone_up,
-        updated_at,
-        routers!inner(id, name, status)
-      `)
-      .order("router_id");
-    if (error) throw error;
-    return (data ?? []).map((row: any) => ({
-      id:                     row.routers.id,
-      name:                   row.routers.name,
-      status:                 row.routers.status,
+    const json = await apiFetch("/admin/routers/wan/summary");
+    return (json.routers ?? []).map((row: any) => ({
+      id:                     row.id,
+      name:                   row.name,
+      status:                 row.status,
       wan_type:               row.wan_type,
       autorate_enabled:       row.autorate_enabled,
       current_down_mbps:      row.current_down_mbps,
@@ -310,14 +312,34 @@ const AutoRatePage = () => {
     }
     setSaving(true);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
+      const token = getToken();
       if (!token) throw new Error("Not authenticated");
 
-      // WAN config save — no backend endpoint, show local success
+      const apiBase = import.meta.env.VITE_API_URL ?? "";
+      const res = await fetch(`${apiBase}/api/admin/routers/${editRouter.id}/wan`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          wan_type:           form.wan_type,
+          max_bandwidth_mbps: parseInt(form.max_bandwidth_mbps),
+          min_bandwidth_mbps: parseInt(form.min_bandwidth_mbps),
+          upload_max_mbps:    parseInt(form.upload_max_mbps),
+          upload_min_mbps:    parseInt(form.upload_min_mbps),
+          autorate_enabled:   form.autorate_enabled,
+          soft_warn_ratio:    swr,
+          soft_panic_ratio:   spr,
+          load_gate_pct:      parseInt(form.load_gate_pct),
+          autorate_tick_s:    parseInt(form.autorate_tick_s),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+
       toast({
         title: "AutoRate config saved",
-        description: "Saved locally — will apply when backend is connected",
+        description: json.push?.applied
+          ? `Pushed live to ${editRouter.name}${json.cake ? ` (${json.cake})` : ""}`
+          : "Saved to DB — will apply on next connection",
       });
       queryClient.invalidateQueries({ queryKey: ["wan_summary_v350"] });
       setEditRouter(null);
