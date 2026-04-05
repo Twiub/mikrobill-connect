@@ -36,8 +36,8 @@ const AnalyticsPage = () => {
   const revenueByPackage = useMemo(() => {
     const map: Record<string, { name: string; revenue: number; users: number }> = {};
     pkgs.forEach(p => { map[p.id] = { name: p.name, revenue: 0, users: 0 }; });
-    txns.filter(t => t.status === "success" && t.package_id && map[t.package_id]).forEach(t => {
-      map[t.package_id].revenue += Number(t.amount);
+    txns.filter(t => t.status === "success" && (t as any).package_id && map[(t as any).package_id]).forEach(t => {
+      map[(t as any).package_id].revenue += Number(t.amount);
     });
     subs.forEach(s => { if (s.package_id && map[s.package_id]) map[s.package_id].users++; });
     return Object.values(map).filter(p => p.revenue > 0 || p.users > 0).sort((a, b) => b.revenue - a.revenue);

@@ -153,6 +153,13 @@ interface Subscriber {
   package_id: string | null;
   expires_at: string | null;
   packages?: { name: string } | null;
+  package_name?: string | null;
+  speed_down?: string | number | null;
+  speed_up?: string | number | null;
+  max_devices?: number | null;
+  duration_days?: number | null;
+  data_cap_gb?: number | null;
+  router_id?: string | null;
 }
 
 // ── PWA-UX-01 FIX: Device type detection from User-Agent ────────────────────────

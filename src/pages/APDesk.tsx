@@ -840,7 +840,7 @@ export default function APDesk() {
   const [unknown,    setUnknown]    = useState([]);
   const [selProfile, setSelProfile] = useState(null);
   const [showForm,   setShowForm]   = useState(false);
-  const [form,       setForm]       = useState({});
+  const [form,       setForm]       = useState<Record<string, any>>({});
   const [tab,        setTab]        = useState("profiles");
 
   const load = useCallback(() => {
