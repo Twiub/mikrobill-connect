@@ -163,7 +163,7 @@ export function useLocationTracking(authToken: string | null): LocationTrackingS
       await getCurrentPosition();
       localStorage.setItem(CONSENT_KEY, "granted");
       setPermission("granted");
-    } catch (err: unknown) {
+    } catch (err: any) {
       if (err?.code === 1 /* PERMISSION_DENIED */) {
         setPermission("denied");
         localStorage.setItem(CONSENT_KEY, "denied");

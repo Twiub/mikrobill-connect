@@ -437,7 +437,7 @@ function NodeNodeTab({ profile }) {
     if (!node) return null;
     let bestTQ = null;
     Object.values(topo).forEach(t => {
-      (t.neighbors || []).forEach(e => {
+      ((t as any).neighbors || []).forEach((e: any) => {
         if (e.node_id === node.id) {
           if (bestTQ === null || e.tq > bestTQ) bestTQ = e.tq;
         }
