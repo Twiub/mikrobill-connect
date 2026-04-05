@@ -100,7 +100,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
         </div>
 
         {/* Main content — pt-14 on mobile clears fixed top bar */}
-        <main className="lg:ml-64 lg:pt-0 px-4 pb-4 sm:px-5 sm:pb-5 lg:px-6 lg:pb-6 min-h-screen" style={{ paddingTop: "calc(3.5rem + 1rem)" }}>
+        <main className="lg:ml-64 pt-[4.5rem] lg:pt-6 px-4 pb-4 sm:px-5 sm:pb-5 lg:px-6 lg:pb-6 min-h-screen">
           <PanelErrorBoundary title="Page">
             {children}
           </PanelErrorBoundary>
