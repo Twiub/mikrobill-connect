@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * frontend/src/pages/NotificationsPage.tsx — v2.0.0 (v3.16.0)
  *
@@ -13,7 +12,7 @@
 
 import { useState, useMemo } from "react";
 import AdminLayout from "@/components/AdminLayout";
-import { supabase } from "@/integrations/supabase/client";
+import { authClient, getToken } from "@/lib/authClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSubscribers } from "@/hooks/useDatabase";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -38,11 +37,15 @@ import { useToast } from "@/hooks/use-toast";
 const useNotifications = (since?: string) => useQuery({
   queryKey: ["notifications", since ?? "all"],
   queryFn: async () => {
-    let q = supabase.from("notifications").select("*").order("sent_at", { ascending: false }).limit(500);
-    if (since) q = (q as any).gte("sent_at", since);
-    const { data, error } = await q;
-    if (error) throw error;
-    return data ?? [];
+    const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
+    const url = since
+      ? `${API}/api/admin/data/notifications?since=${encodeURIComponent(since)}`
+      : `${API}/api/admin/data/notifications`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${authClient.getToken()}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
   },
   refetchInterval: 30000,
 });
@@ -50,9 +53,12 @@ const useNotifications = (since?: string) => useQuery({
 const useTemplates = () => useQuery({
   queryKey: ["notification_templates"],
   queryFn: async () => {
-    const { data, error } = await supabase.from("notification_templates").select("*").order("type");
-    if (error) throw error;
-    return data ?? [];
+    const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
+    const res = await fetch(`${API}/api/admin/data/notification-templates`, {
+      headers: { Authorization: `Bearer ${authClient.getToken()}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
   },
 });
 
@@ -212,20 +218,32 @@ const NotificationsPage = () => {
     }
     setSending(true);
     try {
-      const { error } = await supabase.from("notifications").insert({
-        type: "broadcast", title: broadcast.title, message: broadcast.message,
-        channel: broadcast.channel, target: broadcast.target,
-        status: "pending", sent_at: new Date().toISOString(),
+      const notifAPI = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
+      const notifRes = await fetch(`${notifAPI}/api/admin/data/notifications`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authClient.getToken()}` },
+        body: JSON.stringify({
+          type: "broadcast", title: broadcast.title, message: broadcast.message,
+          channel: broadcast.channel, target: broadcast.target,
+          status: "pending", sent_at: new Date().toISOString(),
+        }),
       });
-      if (error) throw error;
+      if (!notifRes.ok) throw new Error(`HTTP ${notifRes.status}`);
+      // BUG-P3-CRIT-09 FIX: Previously .catch(() => {}) swallowed all errors and showed
+      // "Broadcast Queued" even when the backend call failed. Now errors are surfaced.
       const apiBase = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
-      const token = (await supabase.auth.getSession()).data.session?.access_token ?? "";
-      await fetch(`${apiBase}/admin/notifications/broadcast`, {
+      const token = getToken() ?? "";
+      const bcastRes = await fetch(`${apiBase}/admin/notifications/broadcast`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify(broadcast),
-      }).catch(() => {});
-      toast({ title: "Broadcast Queued" });
+      });
+      if (!bcastRes.ok) {
+        const bcastData = await bcastRes.json().catch(() => ({}));
+        throw new Error(bcastData.error ?? `Broadcast failed (${bcastRes.status})`);
+      }
+      const bcastData = await bcastRes.json();
+      toast({ title: "Broadcast Queued", description: `Queued for ${bcastData.queued ?? "?"} subscriber(s)` });
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
       setBroadcastOpen(false);
       setBroadcast({ title: "", message: "", channel: "both", target: "all" });
@@ -243,10 +261,13 @@ const NotificationsPage = () => {
     setSavingTpl(true);
     try {
       if (editTplId) {
-        const { error } = await supabase.from("notification_templates")
-          .update({ title: tplForm.title, body: tplForm.body, channel: tplForm.channel, enabled: tplForm.enabled, updated_at: new Date().toISOString() })
-          .eq("id", editTplId);
-        if (error) throw error;
+        const tplAPI = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
+        const tplRes = await fetch(`${tplAPI}/api/admin/data/notification-templates/${editTplId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${authClient.getToken()}` },
+          body: JSON.stringify({ title: tplForm.title, body: tplForm.body, channel: tplForm.channel, enabled: tplForm.enabled }),
+        });
+        if (!tplRes.ok) throw new Error(`HTTP ${tplRes.status}`);
         toast({ title: "Template Updated" });
       }
       queryClient.invalidateQueries({ queryKey: ["notification_templates"] });

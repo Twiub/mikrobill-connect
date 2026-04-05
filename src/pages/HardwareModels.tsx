@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * frontend/src/pages/HardwareModels.tsx  — MikroBill Connect v3.19.4
  *
@@ -14,15 +13,13 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "../integrations/supabase/client";
+import { getToken } from "@/lib/authClient";
 
 const API = "/api/admin/meshdesk/hardwares";
 
-async function _getAuthHeader(): Promise<Record<string, string>> {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-  } catch { return {}; }
+function _getAuthHeader(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 async function apiFetch(url: string, opts: RequestInit = {}): Promise<Response> {

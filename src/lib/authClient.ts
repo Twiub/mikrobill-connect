@@ -1,36 +1,87 @@
 /**
- * frontend/src/lib/authClient.ts — Supabase shim
+ * frontend/src/lib/authClient.ts
  *
- * Drop-in replacement that wraps Supabase auth to match the v3.20.0
- * authClient API surface. All pages importing getToken / authClient
- * will work without changes.
+ * Drop-in replacement for @/integrations/supabase/client.
+ * Talks to our own /api/auth/* routes instead of Supabase.
+ *
+ * Usage (same pattern as the old supabase client):
+ *   import { authClient } from "@/lib/authClient";
+ *
+ *   await authClient.signInWithPassword({ email, password });
+ *   await authClient.signUp({ email, password, options: { data: { full_name } } });
+ *   await authClient.resetPasswordForEmail(email);
+ *   await authClient.updateUser({ password });  // for reset-password page
+ *   await authClient.signOut();                 // server-side revocation + local clear
+ *   const token = authClient.getToken();
  */
 
-import { supabase } from "@/integrations/supabase/client";
+const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
 // ─── Token storage ────────────────────────────────────────────────────────────
 
+const TOKEN_KEY = "mb_auth_token";
+
+function saveToken(token: string) {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+function clearToken() {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
 export function getToken(): string | null {
-  // Supabase stores session in localStorage under sb-<ref>-auth-token
-  // We pull from the supabase client's session synchronously
-  const raw = Object.keys(localStorage).find(k => k.startsWith("sb-") && k.endsWith("-auth-token"));
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(localStorage.getItem(raw) || "");
-    return parsed?.access_token ?? null;
-  } catch {
-    return null;
-  }
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+// ─── HTTP helper ──────────────────────────────────────────────────────────────
+
+async function post(path: string, body: Record<string, unknown>) {
+  const res = await fetch(`${API_BASE}/api/auth${path}`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? "Request failed");
+  return data;
+}
+
+// Authenticated POST — includes the stored JWT in Authorization header
+async function authPost(path: string, body: Record<string, unknown> = {}) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/api/auth${path}`, {
+    method:  "POST",
+    headers: {
+      "Content-Type":  "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? "Request failed");
+  return data;
 }
 
 // ─── Auth client ──────────────────────────────────────────────────────────────
 
 export const authClient = {
+  /**
+   * Sign in with email + password.
+   * Stores the JWT in localStorage on success.
+   */
   async signInWithPassword({ email, password }: { email: string; password: string }) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    return { data, error };
+    try {
+      const data = await post("/login", { email, password });
+      saveToken(data.token);
+      return { data: { user: data.user, session: { access_token: data.token } }, error: null };
+    } catch (err) {
+      return { data: null, error: err as Error };
+    }
   },
 
+  /**
+   * Register a new admin user.
+   */
   async signUp({
     email,
     password,
@@ -40,44 +91,83 @@ export const authClient = {
     password: string;
     options?: { data?: { full_name?: string }; emailRedirectTo?: string };
   }) {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: options?.data,
-        emailRedirectTo: options?.emailRedirectTo,
-      },
-    });
-    return { data, error };
+    try {
+      const data = await post("/signup", {
+        email,
+        password,
+        full_name: options?.data?.full_name ?? "",
+      });
+      return { data, error: null };
+    } catch (err) {
+      return { data: null, error: err as Error };
+    }
   },
 
-  async resetPasswordForEmail(email: string, options?: { redirectTo?: string }) {
-    const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: options?.redirectTo,
-    });
-    return { data, error };
+  /**
+   * Send a password reset email.
+   */
+  async resetPasswordForEmail(email: string, _options?: { redirectTo?: string }) {
+    try {
+      const data = await post("/forgot-password", { email });
+      return { data, error: null };
+    } catch (err) {
+      return { data: null, error: err as Error };
+    }
   },
 
-  async updateUser({ password }: { password: string; token?: string }) {
-    const { data, error } = await supabase.auth.updateUser({ password });
-    return { data, error };
+  /**
+   * Set a new password using a reset token from the URL.
+   * Call this from ResetPasswordPage after reading ?token= from the URL.
+   */
+  async updateUser({ password, token }: { password: string; token?: string }) {
+    // token comes from ?token= query param on the reset page
+    const resetToken = token ?? new URLSearchParams(window.location.search).get("token") ?? "";
+    try {
+      const data = await post("/reset-password", { token: resetToken, password });
+      return { data, error: null };
+    } catch (err) {
+      return { data: null, error: err as Error };
+    }
   },
 
+  /**
+   * Get the current user from the stored JWT (decoded, no network call).
+   * Returns null if not logged in or token is expired.
+   */
   getUser(): { id: string; email: string; role: string } | null {
     const token = getToken();
     if (!token) return null;
     try {
+      // Decode the JWT payload without verifying (verification happens server-side)
       const payload = JSON.parse(atob(token.split(".")[1]));
-      if (payload.exp && payload.exp * 1000 < Date.now()) return null;
-      return { id: payload.sub, email: payload.email, role: payload.role ?? "super_admin" };
+      if (payload.exp && payload.exp * 1000 < Date.now()) {
+        clearToken();
+        return null;
+      }
+      return { id: payload.sub, email: payload.email, role: payload.role };
     } catch {
       return null;
     }
   },
 
+  /**
+   * Sign out — revokes the JWT server-side via the jti blocklist, then clears
+   * the stored token locally. Falls back to local-only clear if the request fails.
+   * SEC-AUTH-03 FIX: signOut() now hits POST /api/auth/logout so the token
+   * is immediately invalid server-side, not just removed from localStorage.
+   */
   async signOut(): Promise<void> {
-    await supabase.auth.signOut();
+    try {
+      await authPost("/logout");
+    } catch {
+      // Non-fatal: token will expire naturally via its exp claim
+    } finally {
+      clearToken();
+    }
   },
 
+  /**
+   * Returns the raw JWT string (for Authorization: Bearer headers).
+   */
   getToken,
 };

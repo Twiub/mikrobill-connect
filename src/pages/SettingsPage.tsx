@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * SettingsPage.tsx — v2.1.0 (v3.16.0)
  *
@@ -13,16 +12,17 @@
  *   6. SMS Notifications        — system_settings (sms_provider, sms_*, android_gw_*)
  *                                 Provider selector: Africa's Talking | Android SMS Gateway | Auto
  *                                 Android GW: Username, Password, Device ID (server is fixed)
- *   7. Push Notifications (FCM) — system_settings (fcm_*)
- *   8. DLNA Media Server        — system_settings (dlna_*)
- *   9. Tax & Compliance         — system_settings (tax_*)
+ *   7. Free WhatsApp Chat       — system_settings (free_whatsapp_*) [added v3.17.0]
+ *   8. Push Notifications (FCM) — system_settings (fcm_*)
+ *   9. DLNA Media Server        — system_settings (dlna_*)
+ *  10. Tax & Compliance         — system_settings (tax_*)
  *
  * v3.16.0: SMS section replaced with provider-aware UI (AT + Android SMS Gateway)
  */
 
 import { useState, useEffect } from "react";
 import AdminLayout from "@/components/AdminLayout";
-import { supabase } from "@/integrations/supabase/client";
+import { getToken } from "@/lib/authClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,14 +38,30 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useBranding } from "@/hooks/useBranding";
 
-// Settings page uses Supabase directly
+const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
 
-const useMpesaConfigLocal = () => useQuery({
+async function adminApi(method: string, path: string, body?: object) {
+  const token = localStorage.getItem("auth_token") ?? sessionStorage.getItem("auth_token");
+  const res = await fetch(`${API}${path}`, {
+    method,
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return res.json();
+}
+
+// BUG-NEW-R18-D FIX: Read mpesa_config via backend admin API instead of the Supabase
+// frontend client. Migration 232 (v3.18.0) removed the 'authenticated' RLS policy from
+// mpesa_config, restricting it to service_role only. The frontend Supabase client uses
+// SUPABASE_PUBLISHABLE_KEY (anon/authenticated role) which is now blocked by RLS.
+// The backend route GET /api/admin/system-settings/mpesa-config uses the service-role
+// connection and is protected by authenticateUser + requireRole('super_admin').
+const useMpesaConfig = () => useQuery({
   queryKey: ["mpesa_config"],
   queryFn: async () => {
-    const { data, error } = await supabase.from("mpesa_config").select("*").limit(1).maybeSingle();
-    if (error) return null;
-    return data;
+    const d = await adminApi("GET", "/admin/system-settings/mpesa-config");
+    if (!d.success) throw new Error(d.error || "Failed to load M-Pesa config");
+    return d.config;
   },
 });
 
@@ -124,7 +140,7 @@ const SaveRow = ({ section, saving, sysLoading, onSave }: {
 
 const SettingsPage = () => {
   const { branding: brandingData } = useBranding();
-  const { data: mpesaCfg, isLoading: mpesaLoading } = useMpesaConfigLocal();
+  const { data: mpesaCfg, isLoading: mpesaLoading } = useMpesaConfig();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -160,6 +176,7 @@ const SettingsPage = () => {
   const [maps,   setMaps]   = useState({ google_maps_api_key: "" });
   const [sms,    setSms]    = useState({
     sms_provider: "africastalking",
+    sms_provider_fallback: "none",
     sms_api_key: "", sms_username: "sandbox", sms_sender_id: "",
     android_gw_username: "", android_gw_password: "", android_gw_device_id: "", android_gw_webhook_secret: "",
   });
@@ -200,22 +217,44 @@ const SettingsPage = () => {
   }, [mpesaCfg]);
 
   useEffect(() => {
-    // Load system settings from Supabase
-    supabase.from("system_settings").select("key, value")
-      .then(({ data: rows }) => {
-        if (!rows) return;
-        const s: Record<string, any> = {};
-        rows.forEach((r: any) => { s[r.key] = typeof r.value === 'object' ? r.value : r.value; });
-        // Merge settings into state
-        if (s.radius) setRadius(prev => ({ ...prev, ...s.radius }));
-        if (s.uam) setUam(prev => ({ ...prev, ...s.uam }));
-        if (s.mesh) setMesh(prev => ({ ...prev, ...s.mesh }));
-        if (s.maps) setMaps(prev => ({ ...prev, ...s.maps }));
-        if (s.sms) setSms(prev => ({ ...prev, ...s.sms }));
-        if (s.fcm) setFcm(prev => ({ ...prev, ...s.fcm }));
-        if (s.dlna) setDlna(prev => ({ ...prev, ...s.dlna }));
-        if (s.tax) setTax(prev => ({ ...prev, ...s.tax }));
-        if (s.free_whatsapp) setFwa(prev => ({ ...prev, ...s.free_whatsapp }));
+    adminApi("GET", "/admin/system-settings")
+      .then(d => {
+        if (!d.success) return;
+        const s = d.settings;
+        setRadius({ radius_server_ip: s.radius_server_ip ?? "127.0.0.1", radius_secret: s.radius_secret ?? "", radius_host: s.radius_host ?? "127.0.0.1" });
+        setUam({ portal_uam_url: s.portal_uam_url ?? "", portal_uam_secret: s.portal_uam_secret ?? "greatsecret" });
+        setMesh({
+          meshdesk_dead_after:       s.meshdesk_dead_after       ?? "600",
+          meshdesk_report_proto:     s.meshdesk_report_proto     ?? "http",
+          meshdesk_report_light:     s.meshdesk_report_light     ?? "120",
+          meshdesk_report_full:      s.meshdesk_report_full      ?? "300",
+          meshdesk_report_sampling:  s.meshdesk_report_sampling  ?? "0",
+          stale_action_timeout_secs: s.stale_action_timeout_secs ?? "300",
+        });
+        setMaps({ google_maps_api_key: s.google_maps_api_key ?? "" });
+        setSms({
+          sms_provider:             s.sms_provider             ?? "africastalking",
+          sms_provider_fallback:    s.sms_provider_fallback    ?? "none",
+          sms_api_key:              s.sms_api_key              ?? "",
+          sms_username:             s.sms_username             ?? "sandbox",
+          sms_sender_id:            s.sms_sender_id            ?? "",
+          android_gw_username:      s.android_gw_username      ?? "",
+          android_gw_password:      s.android_gw_password      ?? "",
+          android_gw_device_id:     s.android_gw_device_id     ?? "",
+          android_gw_webhook_secret: s.android_gw_webhook_secret ?? "",
+        });
+        setFcm({ fcm_server_key: s.fcm_server_key ?? "", fcm_project_id: s.fcm_project_id ?? "" });
+        setDlna({ dlna_enabled: s.dlna_enabled ?? "true", dlna_server_ip: s.dlna_server_ip ?? "192.168.88.200", dlna_http_port: s.dlna_http_port ?? "8200" });
+        setTax({ tax_vat_rate: s.tax_vat_rate ?? "16", tax_kra_pin: s.tax_kra_pin ?? "" });
+        setFwa({
+          free_whatsapp_enabled:        s.free_whatsapp_enabled        ?? "true",
+          free_whatsapp_window_days:    s.free_whatsapp_window_days    ?? "3",
+          free_whatsapp_daily_cap_mb:   s.free_whatsapp_daily_cap_mb   ?? "100",
+          free_whatsapp_speed_down:     s.free_whatsapp_speed_down     ?? "1M",
+          free_whatsapp_speed_up:       s.free_whatsapp_speed_up       ?? "512k",
+          free_whatsapp_extend_days:    s.free_whatsapp_extend_days    ?? "3",
+          free_whatsapp_otp_ttl_seconds: s.free_whatsapp_otp_ttl_seconds ?? "300",
+        });
       })
       .catch(() => toast({ title: "Failed to load settings", variant: "destructive" }))
       .finally(() => setSysLoading(false));
@@ -229,17 +268,8 @@ const SettingsPage = () => {
   const saveMpesa = async () => {
     setSavingSection("mpesa");
     try {
-      const { error } = await supabase.from("mpesa_config").upsert({
-        id: mpesaCfg?.id ?? undefined,
-        shortcode: mpesa.shortcode,
-        consumer_key: mpesa.consumer_key,
-        consumer_secret: mpesa.consumer_secret,
-        passkey: mpesa.passkey,
-        callback_url: mpesa.stk_callback_url,
-        environment: mpesa.environment,
-        active: true,
-      });
-      if (error) throw error;
+      const d = await adminApi("PUT", "/admin/system-settings/mpesa-config", mpesa);
+      if (!d.success) throw new Error(d.error || "Save failed");
       queryClient.invalidateQueries({ queryKey: ["mpesa_config"] });
       toast({ title: "M-Pesa Config Saved ✅" });
     } catch (err: any) {
@@ -250,11 +280,8 @@ const SettingsPage = () => {
   const saveSys = async (section: string, values: Record<string, string>) => {
     setSavingSection(section);
     try {
-      const { error } = await supabase.from("system_settings").upsert(
-        { key: section, value: values, updated_at: new Date().toISOString() },
-        { onConflict: "key" }
-      );
-      if (error) throw error;
+      const d = await adminApi("PUT", "/admin/system-settings", values);
+      if (!d.success) throw new Error(d.error ?? "Save failed");
       toast({ title: `${section} settings saved ✅` });
     } catch (err: any) {
       toast({ title: "Save failed", description: err.message, variant: "destructive" });
@@ -267,10 +294,9 @@ const SettingsPage = () => {
     }
     setTesting(true); setTestResult(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const resp = await fetch(`${API}/admin/mpesa/test`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken() ?? ""}` },
         body: JSON.stringify({ consumer_key: mpesa.consumer_key, consumer_secret: mpesa.consumer_secret, environment: mpesa.environment }),
       });
       const r = await resp.json();
@@ -486,16 +512,36 @@ const SettingsPage = () => {
           <div className="space-y-5">
 
             {/* Provider selector */}
-            <Field label="SMS Provider" hint="Choose which service sends SMS notifications. Changes take effect immediately — no server restart needed.">
-              <Select value={sms.sms_provider} onValueChange={v => setSms(p => ({ ...p, sms_provider: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="africastalking">Africa's Talking</SelectItem>
-                  <SelectItem value="android_gateway">Android SMS Gateway</SelectItem>
-                  <SelectItem value="auto">Auto (AT if configured, else Android Gateway)</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field label="Primary SMS Provider" hint="The first provider used for every SMS send. Changes take effect immediately — no server restart needed.">
+                <Select value={sms.sms_provider} onValueChange={v => setSms(p => ({ ...p, sms_provider: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="africastalking">Africa's Talking</SelectItem>
+                    <SelectItem value="android_gateway">Android SMS Gateway</SelectItem>
+                    <SelectItem value="auto">Auto (AT if configured, else Android Gateway)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field label="Fallback Provider" hint="If the primary provider fails, the SMS is automatically retried via this provider. Set to None to disable failover.">
+                <Select value={sms.sms_provider_fallback} onValueChange={v => setSms(p => ({ ...p, sms_provider_fallback: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None (no failover)</SelectItem>
+                    {sms.sms_provider !== "africastalking" && (
+                      <SelectItem value="africastalking">Africa's Talking</SelectItem>
+                    )}
+                    {sms.sms_provider !== "android_gateway" && (
+                      <SelectItem value="android_gateway">Android SMS Gateway</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                {sms.sms_provider_fallback !== "none" && sms.sms_provider_fallback === sms.sms_provider && (
+                  <p className="text-[10px] text-destructive mt-1">Fallback must be different from primary.</p>
+                )}
+              </Field>
+            </div>
 
             {/* Africa's Talking credentials */}
             {(sms.sms_provider === "africastalking" || sms.sms_provider === "auto") && (
@@ -679,7 +725,7 @@ web.whatsapp.com *.wa.me
           </div>
         </Section>
 
-        {/* ── 7. FCM ────────────────────────────────────────────────────── */}
+        {/* ── 8. FCM ────────────────────────────────────────────────────── */}
         <Section icon={<Bell className="h-5 w-5 text-chart-3" />} title="Push Notifications — Firebase (FCM)" defaultOpen={false}>
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -704,7 +750,7 @@ web.whatsapp.com *.wa.me
         >
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <Field label="Enable DLNA Access Control" hint="Only active subscribers can access Universal Media Server. The dlna-allowed address-list on MikroTik is refreshed every 10 minutes.">
+              <Field label="Enable DLNA Access Control" hint="Only active subscribers can access Universal Media Server. The dlna-allowed address-list on MikroTik is refreshed every 10 minutes. Per-router overrides can be set in Routers → Edit → DLNA tab.">
                 <div className="flex items-center gap-3 h-10">
                   <Switch
                     checked={dlna.dlna_enabled === "true"}
@@ -713,7 +759,7 @@ web.whatsapp.com *.wa.me
                   <span className="text-sm text-muted-foreground">{dlna.dlna_enabled === "true" ? "On" : "Off"}</span>
                 </div>
               </Field>
-              <Field label="UMS Server IP (LAN)" hint="Static LAN IP of the Universal Media Server PC. Set a static DHCP lease on MikroTik for this device.">
+              <Field label="UMS Server IP (Global / Fallback)" hint="Default UMS LAN IP used when a router has no per-router DLNA IP set. For multi-subnet deployments, set a per-router IP in Routers → Edit → DLNA tab instead.">
                 <Input className="font-mono" placeholder="192.168.88.200" value={dlna.dlna_server_ip} onChange={e => setDlna(p => ({ ...p, dlna_server_ip: e.target.value }))} />
               </Field>
               <Field label="UMS HTTP Streaming Port" hint="Port UMS listens on for HTTP streaming (default 8200). Re-download the router setup script after changing this.">

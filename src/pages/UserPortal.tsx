@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * UserPortal.tsx — v3.4.0
  *
@@ -21,7 +20,6 @@ import {
   ArrowDown, Trash2, CheckCircle2, WifiOff, AlertCircle, Link, ArrowUpCircle, ArrowDownCircle,
 } from "lucide-react";
 import { formatKES } from "@/hooks/useDatabase";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import StatusBadge from "@/components/StatusBadge";
@@ -211,10 +209,10 @@ const UserPortal = () => {
       // E-01 FIX: Store internet_status so dashboard can show "Connecting…"
       // when payment was received but MikroTik grant is still in flight.
       if (data.internet_status) setInternetStatus(data.internet_status);
-      // If no active package → show payments tab immediately
+      // If no active package → show payments tab immediately.
+      // NULL expires_at = lifetime/unlimited plan — treat as active (matches backend getSessionType).
       const isActive = data.subscriber.status === "active" &&
-        data.subscriber.expires_at &&
-        new Date(data.subscriber.expires_at) > new Date();
+        (!data.subscriber.expires_at || new Date(data.subscriber.expires_at) > new Date());
       if (!isActive) setActiveTab("payments");
     } catch (err: any) {
       // MED-04 FIX: Detect offline marker injected by service worker instead of
@@ -252,16 +250,10 @@ const UserPortal = () => {
   const loadTxns = useCallback(async () => {
     if (!token) return;
     try {
-      const { data } = await supabase
-        .from("transactions")
-        .select("*")
-        .eq("subscriber_id", portalUser?.id)
-        .order("created_at", { ascending: false })
-        .limit(20);
-      setTxns(data ?? []);
-    } catch (err) { console.error("[UserPortal] loadSubscriber:", err); }
-
-  }, [token, portalUser?.id]);
+      const txnData = await apiCall("GET", "/portal/transactions?limit=20", undefined, token);
+      setTxns(txnData?.success ? (txnData.transactions ?? []) : []);
+    } catch (err) { console.error("[UserPortal] loadTxns:", err); }
+  }, [token]);
 
   const loadShareLinks = useCallback(async () => {
     if (!token) return;
@@ -287,12 +279,14 @@ const UserPortal = () => {
       // while devices+packages are still in-flight. Total wait: ~400ms (longest
       // single call), not the sum. Same pattern WordPress uses with async action
       // hooks to parallelize database queries.
-      const [pkgsResult] = await Promise.all([
-        supabase.from("packages").select("*").eq("active", true).order("price"),
+      const portalToken = getPortalToken();
+      const [pkgsData] = await Promise.all([
+        apiCall("GET", "/portal/packages", undefined, portalToken),
         loadSubscriber(),
         loadDevices(),
       ]);
-      setAllPackages(pkgsResult.data ?? []);
+      const pkgList = pkgsData?.success ? (pkgsData.packages ?? []) : [];
+      setAllPackages(pkgList.filter((p: any) => p.is_active));
       setLoading(false);
 
       // FIX #8 (MEDIUM — PWA keepalive browser cap):
@@ -310,19 +304,25 @@ const UserPortal = () => {
     init();
   }, []);
 
-  useEffect(() => { if (portalUser?.id) loadTxns(); }, [portalUser?.id]);
+  useEffect(() => { if (token) loadTxns(); }, [token, loadTxns]);
   useEffect(() => { if (activeTab === "share") loadShareLinks(); }, [activeTab]);
+  useEffect(() => {
+    if (activeTab === "tickets" && token) {
+      apiCall("GET", "/portal/tickets", undefined, token)
+        .then((data: any) => { if (data.success) setTickets(data.tickets ?? []); })
+        .catch(() => {});
+    }
+  }, [activeTab, token]);
 
   // ── Load PPPoE packages when Home WiFi tab opened ─────────────────────────
   useEffect(() => {
     if (activeTab === "homewifi" && portalUser?.account_type === "pppoe" && pppoePackages.length === 0) {
-      supabase
-        .from("packages")
-        .select("id, name, price, speed_down, speed_up, duration_days, type")
-        .eq("active", true)
-        .in("type", ["pppoe", "both"])
-        .order("price")
-        .then(({ data }) => setPppoePackages(data ?? []));
+      apiCall("GET", "/portal/packages", undefined, getPortalToken())
+        .then((data: any) => {
+          const list: any[] = data?.success ? (data.packages ?? []) : [];
+          setPppoePackages(list.filter((p: any) => p.is_active && ["pppoe", "both"].includes(p.type)));
+        })
+        .catch(() => {});
     }
   }, [activeTab, portalUser?.account_type]);
 
@@ -396,7 +396,9 @@ const UserPortal = () => {
       }
     }).finally(() => setUsageLoading(false));
   }, [portalUser?.id, activeTab, token]); // BUG-S2-006 FIX v3.19.1: removed portalUser?.data_used_gb — it's always 0 (BUG-S3-002) and caused the effect to never re-fire meaningfully. Depend on subscriber id instead.
-  const isActive    = portalUser?.status === "active" && expiresIn > 0;
+  // NULL expires_at = lifetime/unlimited plan — active indefinitely
+  const isActive    = portalUser?.status === "active" &&
+    (!portalUser?.expires_at || expiresIn > 0);
 
   // ── Device actions ────────────────────────────────────────────────────────
   const deactivateDevice = async (mac: string) => {
@@ -418,11 +420,23 @@ const UserPortal = () => {
     else toast({ title: "Error", description: res.error, variant: "destructive" });
   };
 
+  const [currentPwd, setCurrentPwd] = useState("");
   const [newPwd, setNewPwd]         = useState("");
   const [confirmPwd, setConfirmPwd] = useState("");
   const [pwdSaving, setPwdSaving]   = useState(false);
 
+  // KYC self-service state
+  const [kycOpen, setKycOpen]       = useState(false);
+  const [kycIdType, setKycIdType]   = useState("national_id");
+  const [kycIdNumber, setKycIdNumber] = useState("");
+  const [kycSaving, setKycSaving]   = useState(false);
+  const [kycMsg, setKycMsg]         = useState<{ ok: boolean; text: string } | null>(null);
+
   const changePassword = async () => {
+    if (!currentPwd) {
+      toast({ title: "Current password required", description: "Enter your existing password", variant: "destructive" });
+      return;
+    }
     if (!newPwd || newPwd.length < 6) {
       toast({ title: "Password too short", description: "Minimum 6 characters", variant: "destructive" });
       return;
@@ -433,10 +447,10 @@ const UserPortal = () => {
     }
     setPwdSaving(true);
     try {
-      const res = await apiCall("POST", "/portal/change-password", { newPassword: newPwd }, token);
+      const res = await apiCall("POST", "/portal/change-password", { currentPassword: currentPwd, newPassword: newPwd }, token);
       if (res.success) {
         toast({ title: "Password updated", description: "Your password has been changed." });
-        setNewPwd(""); setConfirmPwd("");
+        setCurrentPwd(""); setNewPwd(""); setConfirmPwd("");
       } else {
         toast({ title: "Error", description: res.error ?? "Failed to change password", variant: "destructive" });
       }
@@ -445,6 +459,25 @@ const UserPortal = () => {
     } finally {
       setPwdSaving(false);
     }
+  };
+
+  const submitKyc = async () => {
+    if (!kycIdNumber.trim()) return;
+    setKycSaving(true);
+    setKycMsg(null);
+    try {
+      const res = await apiCall("POST", "/portal/kyc", { idType: kycIdType, idNumber: kycIdNumber.trim() }, token);
+      if (res.success) {
+        setKycMsg({ ok: true, text: res.message ?? "KYC submitted successfully." });
+        setKycIdNumber("");
+        setKycOpen(false);
+      } else {
+        setKycMsg({ ok: false, text: res.error ?? "Submission failed." });
+      }
+    } catch {
+      setKycMsg({ ok: false, text: "Network error. Please try again." });
+    }
+    setKycSaving(false);
   };
 
   const movePriority = async (deviceId: number, direction: "up" | "down") => {
@@ -522,20 +555,23 @@ const UserPortal = () => {
 
   const submitTicket = async () => {
     if (!ticketTitle.trim() || !ticketDesc.trim()) return;
-    const { error } = await supabase.from("tickets").insert({
-      subscriber_id: portalUser?.id,
-      title: ticketTitle,
-      description: ticketDesc,
-      priority: "medium",
-      status: "open",
-    });
-    if (!error) {
-      toast({ title: "Ticket submitted" });
-      setTicketTitle(""); setTicketDesc("");
-      const { data } = await supabase.from("tickets").select("*").eq("subscriber_id", portalUser?.id).order("created_at", { ascending: false });
-      setTickets(data ?? []);
-    } else {
-      toast({ title: "Error", description: "Failed to submit ticket", variant: "destructive" });
+    try {
+      const res = await apiCall("POST", "/portal/tickets", {
+        title: ticketTitle,
+        description: ticketDesc,
+        priority: "medium",
+      }, token);
+      if (res.success) {
+        toast({ title: "Ticket submitted" });
+        setTicketTitle(""); setTicketDesc("");
+        // Reload tickets list
+        const tRes = await apiCall("GET", "/portal/tickets", undefined, token);
+        if (tRes.success) setTickets(tRes.tickets ?? []);
+      } else {
+        toast({ title: "Error", description: res.error ?? "Failed to submit ticket", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Network error. Please try again.", variant: "destructive" });
     }
   };
 
@@ -661,7 +697,6 @@ const UserPortal = () => {
                   </p>
                 </div>
               )}
-              </div>
               <div className="grid grid-cols-3 gap-3 text-center mb-3">
                 <div>
                   <p className="text-sm font-bold">{portalUser?.speed_down ?? "—"}</p>
@@ -683,6 +718,7 @@ const UserPortal = () => {
                 </div>
                 <Progress value={dataPercent} className="h-1.5" />
               </div>
+            </div>
             <div className="grid grid-cols-3 gap-2">
               {(isPppoe ? [
                 { tab: "homewifi" as const, icon: Wifi,       label: "Home WiFi", color: "text-primary" },
@@ -1229,22 +1265,57 @@ const UserPortal = () => {
             </div>
             <div className="glass-card p-4 space-y-3">
               <h3 className="text-xs font-semibold">Change Password</h3>
+              <Input type="password" placeholder="Current password" className="bg-muted/50 border-border"
+                value={currentPwd} onChange={e => setCurrentPwd(e.target.value)} />
               <Input type="password" placeholder="New password (min 6 chars)" className="bg-muted/50 border-border"
                 value={newPwd} onChange={e => setNewPwd(e.target.value)} />
               <Input type="password" placeholder="Confirm new password" className="bg-muted/50 border-border"
                 value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)} />
               <p className="text-[10px] text-muted-foreground">Password updated immediately on your account.</p>
               <Button size="sm" className="w-full" onClick={changePassword}
-                disabled={pwdSaving || !newPwd || !confirmPwd}>
+                disabled={pwdSaving || !currentPwd || !newPwd || !confirmPwd}>
                 {pwdSaving ? "Saving…" : "Update Password"}
               </Button>
             </div>
             <div className="glass-card p-4 space-y-3">
               <h3 className="text-xs font-semibold">KYC Compliance</h3>
-              <p className="text-[10px] text-muted-foreground">Upload your ID document as required by Kenya ICT regulations.</p>
-              <Button variant="outline" size="sm" className="w-full gap-2">
-                <FileText className="h-3.5 w-3.5" /> Upload ID Document
-              </Button>
+              <p className="text-[10px] text-muted-foreground">Submit your ID details as required by Kenya ICT regulations.</p>
+              {kycMsg && (
+                <p className={`text-[11px] px-3 py-2 rounded-lg border ${kycMsg.ok ? "text-success bg-success/8 border-success/20" : "text-destructive bg-destructive/8 border-destructive/20"}`}>
+                  {kycMsg.text}
+                </p>
+              )}
+              {kycOpen ? (
+                <div className="space-y-2">
+                  <select
+                    value={kycIdType}
+                    onChange={e => setKycIdType(e.target.value)}
+                    className="w-full rounded-md border border-border bg-muted/50 p-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    <option value="national_id">National ID</option>
+                    <option value="passport">Passport</option>
+                    <option value="driving_license">Driving License</option>
+                    <option value="alien_id">Alien ID</option>
+                  </select>
+                  <Input
+                    placeholder="ID / Passport number"
+                    value={kycIdNumber}
+                    onChange={e => setKycIdNumber(e.target.value)}
+                    className="bg-muted/50 border-border text-sm"
+                    maxLength={30}
+                  />
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" className="flex-1" onClick={() => { setKycOpen(false); setKycMsg(null); }}>Cancel</Button>
+                    <Button size="sm" className="flex-1 gap-1.5" onClick={submitKyc} disabled={kycSaving || !kycIdNumber.trim()}>
+                      {kycSaving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Submitting…</> : "Submit"}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => { setKycOpen(true); setKycMsg(null); }}>
+                  <FileText className="h-3.5 w-3.5" /> Submit ID Details
+                </Button>
+              )}
             </div>
             <Button variant="ghost" className="w-full text-destructive gap-2" onClick={handleLogout}>
               <LogOut className="h-4 w-4" /> Log Out

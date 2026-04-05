@@ -1,4 +1,3 @@
-// @ts-nocheck
 import AdminLayout from "@/components/AdminLayout";
 import StatCard from "@/components/StatCard";
 import { useTransactions, useSubscribers, usePackages, formatKES } from "@/hooks/useDatabase";
@@ -7,14 +6,6 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { useMemo } from "react";
 
 const COLORS = ["hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))"];
-
-const CHART_TOOLTIP_STYLE: React.CSSProperties = {
-  backgroundColor: "hsl(var(--popover))",
-  border: "1px solid hsl(var(--border))",
-  borderRadius: "8px",
-  color: "hsl(var(--popover-foreground))",
-  fontSize: "12px",
-};
 
 const AnalyticsPage = () => {
   const { data: transactions = [] } = useTransactions();

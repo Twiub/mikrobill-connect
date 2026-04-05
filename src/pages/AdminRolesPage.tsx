@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * AdminRolesPage.tsx — v3.5.0
  *
@@ -22,11 +21,20 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { UserPlus, Shield, Loader2, Edit, Trash2, AlertCircle } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { getToken } from "@/lib/authClient";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 
-// Using Supabase directly instead of external API
+const API = (window as Window & { __MIKROBILL_API__?: string }).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+
+async function apiFetch(method: string, path: string, body?: object) {
+  const res = await fetch(`${API}${path}`, {
+    method,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return res.json();
+}
 
 const PAGE_CATEGORIES: { label: string; pages: string[] }[] = [
   { label: "📊 Dashboards & Analytics", pages: ["dashboard", "analytics", "ai-health"] },
@@ -93,19 +101,11 @@ const AdminRolesPage = () => {
     setEditRole(role);
     setLoadingPerms(true);
     try {
-      // Load permissions from user_roles table for this role
-      const { data } = await supabase.from("user_roles").select("permissions").eq("role", role).limit(1).maybeSingle();
-      const perms: Record<string, boolean> = {};
-      const allPages = PAGE_CATEGORIES.flatMap(c => c.pages);
-      // Default all pages to true for the role
-      allPages.forEach(p => { perms[p] = true; });
-      // Override with stored permissions if any
-      if (data?.permissions && Array.isArray(data.permissions)) {
-        allPages.forEach(p => { perms[p] = false; });
-        (data.permissions as string[]).forEach(p => { perms[p] = true; });
+      const data = await apiFetch("GET", `/admin/role-permissions/${role}`);
+      if (data.success) {
+        setPermissions({ ...data.permissions });
+        setOrigPermissions({ ...data.permissions });
       }
-      setPermissions({ ...perms });
-      setOrigPermissions({ ...perms });
     } catch {
       toast({ title: "Failed to load permissions", variant: "destructive" });
     } finally {
@@ -117,15 +117,15 @@ const AdminRolesPage = () => {
     if (!editRole) return;
     setSavingPerms(true);
     try {
-      const allowedPages = Object.entries(permissions).filter(([, v]) => v).map(([k]) => k);
-      // Update permissions for all users with this role
-      const { error } = await supabase.from("user_roles").update({ permissions: allowedPages }).eq("role", editRole);
-      if (error) throw error;
-      toast({ title: "Permissions updated" });
-      setEditRole(null);
-      queryClient.invalidateQueries({ queryKey: ["user_roles"] });
-    } catch (err: any) {
-      toast({ title: "Failed to save", description: err.message, variant: "destructive" });
+      const data = await apiFetch("PUT", `/admin/role-permissions/${editRole}`, { permissions });
+      if (data.success) {
+        toast({ title: "Permissions updated" });
+        setEditRole(null);
+      } else {
+        toast({ title: "Error", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Failed to save", variant: "destructive" });
     } finally {
       setSavingPerms(false);
     }
@@ -139,28 +139,24 @@ const AdminRolesPage = () => {
 
   const removeAdmin = async (userId: string, name: string) => {
     if (!confirm(`Remove admin access for ${name}?`)) return;
-    const { error } = await supabase.from("user_roles").delete().eq("user_id", userId);
-    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
-    else { toast({ title: "Admin removed" }); queryClient.invalidateQueries({ queryKey: ["user_roles"] }); }
+    const data = await apiFetch("DELETE", `/admin/${userId}`);
+    if (data.success) { toast({ title: "Admin removed" }); queryClient.invalidateQueries({ queryKey: ["user_roles"] }); }
+    else toast({ title: "Error", description: data.error, variant: "destructive" });
   };
 
   const changeRole = async (userId: string, newRole: string, name: string) => {
-    const { error } = await supabase.from("user_roles").update({ role: newRole }).eq("user_id", userId);
-    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
-    else { toast({ title: "Role updated", description: `${name} → ${newRole.replace(/_/g, " ")}` }); queryClient.invalidateQueries({ queryKey: ["user_roles"] }); }
+    const data = await apiFetch("PATCH", `/admin/role/${userId}`, { role: newRole });
+    if (data.success) { toast({ title: "Role updated", description: `${name} → ${newRole.replace(/_/g, " ")}` }); queryClient.invalidateQueries({ queryKey: ["user_roles"] }); }
+    else toast({ title: "Error", description: data.error, variant: "destructive" });
   };
 
   const handleInvite = async () => {
     if (!inviteEmail || !inviteRole) { toast({ title: "Email and role required", variant: "destructive" }); return; }
     setInviting(true);
     try {
-      // Look up the user by email in profiles
-      const { data: profile } = await supabase.from("profiles").select("id").eq("email", inviteEmail).maybeSingle();
-      if (!profile) throw new Error("User not found. They must sign up first, then you can assign a role.");
-      // Insert role
-      const { error } = await supabase.from("user_roles").insert({ user_id: profile.id, role: inviteRole });
-      if (error) throw error;
-      toast({ title: "Role Assigned", description: `${inviteRole.replace(/_/g, " ")} role assigned to ${inviteEmail}` });
+      const result = await apiFetch("POST", "/admin/invite", { email: inviteEmail, role: inviteRole, fullName: inviteName });
+      if (!result.success) throw new Error(result.error ?? "Invite failed");
+      toast({ title: "Invite Sent", description: `Email sent to ${inviteEmail}` });
       setShowInvite(false); setInviteEmail(""); setInviteName(""); setInviteRole("support_agent");
       queryClient.invalidateQueries({ queryKey: ["user_roles"] });
     } catch (err: unknown) {

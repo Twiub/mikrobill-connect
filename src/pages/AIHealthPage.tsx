@@ -1,4 +1,3 @@
-// @ts-nocheck
 import AdminLayout from "@/components/AdminLayout";
 import { useAiHealthReports, useRouters, useActiveSessions, useErrorLogs } from "@/hooks/useDatabase";
 import { Badge } from "@/components/ui/badge";

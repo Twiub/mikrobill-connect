@@ -1,7 +1,13 @@
-// @ts-nocheck
+/**
+ * ResetPasswordPage.tsx — v2.0.0 (Supabase-free)
+ *
+ * Reads the reset token from ?token= query param (our backend sends it this way).
+ * Old version read type=recovery from the URL hash (Supabase magic link format).
+ */
+
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { authClient } from "@/lib/authClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,40 +15,45 @@ import { Wifi, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const ResetPasswordPage = () => {
-  const [password, setPassword]         = useState("");
-  const [confirmPwd, setConfirmPwd]     = useState("");
-  const [showPwd, setShowPwd]           = useState(false);
-  const [pwdMismatch, setPwdMismatch]   = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [ready, setReady] = useState(false);
+  const [password, setPassword]       = useState("");
+  const [confirmPwd, setConfirmPwd]   = useState("");
+  const [showPwd, setShowPwd]         = useState(false);
+  const [pwdMismatch, setPwdMismatch] = useState(false);
+  const [loading, setLoading]         = useState(false);
+  const [token, setToken]             = useState<string | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
 
   useEffect(() => {
-    const hash = window.location.hash;
-    if (hash.includes("type=recovery")) {
-      setReady(true);
-    }
+    // Our backend sends: /reset-password?token=<hex>
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("token");
+    if (t) setToken(t);
   }, []);
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password !== confirmPwd) { setPwdMismatch(true); return; }
+    if (!token) return;
     setPwdMismatch(false);
     setLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password });
+      const { error } = await authClient.updateUser({ password, token });
       if (error) throw error;
       toast({ title: "Password updated", description: "You can now sign in with your new password." });
       navigate("/auth");
-    } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } catch (error: unknown) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  if (!ready) {
+  if (!token) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4 sm:p-6">
         <p className="text-muted-foreground">Invalid or expired reset link.</p>
@@ -63,19 +74,44 @@ const ResetPasswordPage = () => {
           <div className="space-y-2">
             <Label htmlFor="new-password">New Password</Label>
             <div className="relative">
-              <Input id="new-password" type={showPwd ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} className="bg-card border-border pr-10" />
-              <button type="button" onClick={() => setShowPwd(v => !v)} aria-label="Toggle password visibility" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <Input
+                id="new-password"
+                type={showPwd ? "text" : "password"}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+                minLength={8}
+                autoComplete="new-password"
+                className="bg-card border-border pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPwd(v => !v)}
+                aria-label={showPwd ? "Hide password" : "Show password"}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              >
                 {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium leading-none">Confirm New Password</label>
-              <Input type={showPwd ? "text" : "password"} value={confirmPwd} onChange={(e) => { setConfirmPwd(e.target.value); setPwdMismatch(false); }} required className="bg-card border-border" />
-              {pwdMismatch && <p className="text-xs text-destructive">Passwords do not match</p>}
-            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="confirm-password">Confirm Password</Label>
+            <Input
+              id="confirm-password"
+              type="password"
+              value={confirmPwd}
+              onChange={e => setConfirmPwd(e.target.value)}
+              required
+              minLength={8}
+              autoComplete="new-password"
+              className="bg-card border-border"
+            />
+            {pwdMismatch && (
+              <p className="text-xs text-destructive">Passwords do not match.</p>
+            )}
           </div>
           <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Updating..." : "Update Password"}
+            {loading ? "Saving…" : "Set New Password"}
           </Button>
         </form>
       </div>

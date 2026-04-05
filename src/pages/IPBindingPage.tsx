@@ -1,23 +1,124 @@
-// @ts-nocheck
+/**
+ * IPBindingPage.tsx
+ *
+ * BUG-P3-CRIT-07 FIX: "Bind MAC" and "Assign IP" buttons previously had no onClick
+ * handlers — completely dead. Added prompt-based handlers that call:
+ *   PATCH /api/admin/subscribers/:id/mac-binding  (mac_binding field)
+ *   PATCH /api/admin/subscribers/:id/static-ip    (static_ip field)
+ */
+
+import { useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { useSubscribers } from "@/hooks/useDatabase";
+import { useQueryClient } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Lock, Unlock, Link2, Globe, Shield } from "lucide-react";
 import StatusBadge from "@/components/StatusBadge";
+import { useToast } from "@/hooks/use-toast";
+import { getToken } from "@/lib/authClient";
 
 const IPBindingPage = () => {
   const { data: users = [] } = useSubscribers();
-  const boundUsers = users.filter((u: any) => u.mac_binding || u.static_ip);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [loading, setLoading] = useState<string | null>(null);
+
+  const boundUsers   = users.filter((u: any) => u.mac_binding || u.static_ip);
   const unboundUsers = users.filter((u: any) => !u.mac_binding && !u.static_ip);
+
+  const apiBase = () => (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+
+
+  // BUG-P3-CRIT-07 FIX: Bind / Unbind MAC
+  const handleMacBinding = async (u: any) => {
+    if (u.mac_binding) {
+      // Unbind — confirm then clear
+      if (!confirm(`Unbind MAC ${u.mac_binding} from ${u.username}?`)) return;
+    } else {
+      const mac = prompt(`Enter MAC address for ${u.username} (XX:XX:XX:XX:XX:XX):`);
+      if (!mac) return;
+      if (!/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/.test(mac.trim())) {
+        toast({ title: "Invalid MAC", description: "Format must be XX:XX:XX:XX:XX:XX", variant: "destructive" });
+        return;
+      }
+      setLoading(`mac-${u.id}`);
+      try {
+        const res = await fetch(`${apiBase()}/admin/subscribers/${u.id}/mac-binding`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await getToken()}` },
+          body: JSON.stringify({ mac_binding: mac.trim().toUpperCase() }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Failed");
+        toast({ title: "MAC bound", description: `${mac.trim().toUpperCase()} bound to ${u.username}` });
+        queryClient.invalidateQueries({ queryKey: ["subscribers"] });
+      } catch (err: any) {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      } finally { setLoading(null); }
+      return;
+    }
+    setLoading(`mac-${u.id}`);
+    try {
+      const res = await fetch(`${apiBase()}/admin/subscribers/${u.id}/mac-binding`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${await getToken()}` },
+        body: JSON.stringify({ mac_binding: null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed");
+      toast({ title: "MAC unbound", description: `MAC removed from ${u.username}` });
+      queryClient.invalidateQueries({ queryKey: ["subscribers"] });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally { setLoading(null); }
+  };
+
+  // BUG-P3-CRIT-07 FIX: Assign / Release static IP
+  const handleStaticIp = async (u: any) => {
+    if (u.static_ip) {
+      if (!confirm(`Release static IP ${u.static_ip} from ${u.username}?`)) return;
+      setLoading(`ip-${u.id}`);
+      try {
+        const res = await fetch(`${apiBase()}/admin/subscribers/${u.id}/static-ip`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await getToken()}` },
+          body: JSON.stringify({ static_ip: null }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Failed");
+        toast({ title: "IP released", description: `Static IP removed from ${u.username}` });
+        queryClient.invalidateQueries({ queryKey: ["subscribers"] });
+      } catch (err: any) {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      } finally { setLoading(null); }
+    } else {
+      const ip = prompt(`Enter static IP address for ${u.username}:`);
+      if (!ip) return;
+      setLoading(`ip-${u.id}`);
+      try {
+        const res = await fetch(`${apiBase()}/admin/subscribers/${u.id}/static-ip`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await getToken()}` },
+          body: JSON.stringify({ static_ip: ip.trim() }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Failed");
+        toast({ title: "IP assigned", description: `Static IP ${ip.trim()} assigned to ${u.username}` });
+        queryClient.invalidateQueries({ queryKey: ["subscribers"] });
+      } catch (err: any) {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      } finally { setLoading(null); }
+    }
+  };
 
   return (
     <AdminLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">IP Lock & MAC Binding</h1>
-          <p className="text-sm text-muted-foreground mt-1">Static IP assignment & MAC address binding for PPPoE & premium users</p>
+          <h1 className="text-xl sm:text-2xl font-bold">IP Lock &amp; MAC Binding</h1>
+          <p className="text-sm text-muted-foreground mt-1">Static IP assignment &amp; MAC address binding for PPPoE &amp; premium users</p>
         </div>
 
         {/* Summary */}
@@ -45,7 +146,7 @@ const IPBindingPage = () => {
               <Globe className="h-4 w-4 text-primary" />
             </div>
             <div>
-              <p className="text-lg font-bold">{users.filter(u => u.static_ip).length}</p>
+              <p className="text-lg font-bold">{users.filter((u: any) => u.static_ip).length}</p>
               <p className="text-[10px] text-muted-foreground">Static IPs</p>
             </div>
           </div>
@@ -77,7 +178,7 @@ const IPBindingPage = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.map((u) => (
+              {users.map((u: any) => (
                 <TableRow key={u.id} className="border-border/30">
                   <TableCell className="text-sm font-medium">{u.full_name}</TableCell>
                   <TableCell className="text-xs font-mono text-muted-foreground">{u.username}</TableCell>
@@ -104,10 +205,24 @@ const IPBindingPage = () => {
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" className="h-7 text-[10px]">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-[10px]"
+                        disabled={loading === `mac-${u.id}`}
+                        onClick={() => handleMacBinding(u)}
+                        aria-label={u.mac_binding ? `Unbind MAC from ${u.username}` : `Bind MAC to ${u.username}`}
+                      >
                         {u.mac_binding ? "Unbind MAC" : "Bind MAC"}
                       </Button>
-                      <Button variant="ghost" size="sm" className="h-7 text-[10px]">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-[10px]"
+                        disabled={loading === `ip-${u.id}`}
+                        onClick={() => handleStaticIp(u)}
+                        aria-label={u.static_ip ? `Release IP from ${u.username}` : `Assign IP to ${u.username}`}
+                      >
                         {u.static_ip ? "Release IP" : "Assign IP"}
                       </Button>
                     </div>

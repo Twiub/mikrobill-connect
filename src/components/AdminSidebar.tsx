@@ -1,18 +1,24 @@
 /**
  * AdminSidebar.tsx — v4.0.0
- * Adapted for Supabase backend.
+ *
+ * FIXES:
+ *  - MOBILE-03: Accepts onNavClick prop — called on every nav link click
+ *    so AdminLayout can close the mobile drawer automatically.
+ *  - MOBILE-05: Added aria-current="page" for active link (accessibility).
+ *  - PERF-02: Icon size consistent, no reflow.
+ *  - ARIA-01: Sign out button has descriptive aria-label.
  */
 
 import { Link, useLocation } from "react-router-dom";
 import { useBranding } from "@/hooks/useBranding";
 import { useAuth } from "@/hooks/useAuth";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { getToken } from "@/lib/authClient";
 import {
   LayoutDashboard, Users, Package, Receipt, Activity, TicketCheck, Router, Wifi,
   Shield, BarChart3, AlertTriangle, Brain, FileText, DollarSign, Bell, Clock,
   Link2, ShieldAlert, UserCog, Settings, MapPin, Monitor, LogOut, Map, Database, Gauge, Terminal,
-  Radio, Globe, BarChart2, Zap, Home, Grid3x3,
+  Radio, Globe, Network, BarChart2, Zap, Home, Grid3x3,
 } from "lucide-react";
 
 const ALL_NAV_ITEMS = [
@@ -47,13 +53,12 @@ const ALL_NAV_ITEMS = [
   { path: "/sharing",        slug: "sharing",           icon: ShieldAlert,     label: "Anti-Sharing" },
   { path: "/kyc",            slug: "kyc",               icon: FileText,        label: "KYC Compliance" },
   { path: "/notifications",  slug: "notifications",     icon: Bell,            label: "Notifications" },
-  { path: "/vouchers",       slug: "vouchers",          icon: Receipt,         label: "Vouchers" },
-  { path: "/hardware-models", slug: "hardware-models",  icon: Router,          label: "Hardware Models" },
   { path: "/admin-roles",    slug: "admin-roles",       icon: UserCog,         label: "Admin Roles" },
   { path: "/settings",       slug: "settings",          icon: Settings,        label: "Settings" },
 ];
 
 interface AdminSidebarProps {
+  /** Called when a nav link is clicked — used by AdminLayout to close mobile drawer */
   onNavClick?: () => void;
 }
 
@@ -64,38 +69,55 @@ const AdminSidebar = ({ onNavClick }: AdminSidebarProps) => {
   const roleLabel = userRole?.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) ?? "Admin";
 
   const [permissions, setPermissions] = useState<Record<string, boolean> | null>(null);
+  // FIX-SIDEBAR-BLANK (v3.20.4): Track in-flight permissions fetch. Without this,
+  // permissions===null → canSee()===false → visibleNav=[] → completely blank sidebar
+  // during the fetch. Also fixes a second bug: non-OK HTTP responses (401/403) silently
+  // left permissions=null forever because the previous code had no else branch.
+  const [loadingPerms, setLoadingPerms] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     const fetchPerms = async () => {
+      setLoadingPerms(true);
       try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) return;
-        const { data: roleData } = await supabase
-          .from("user_roles")
-          .select("role, permissions")
-          .eq("user_id", authUser.id)
-          .maybeSingle();
-        if (roleData?.role === "super_admin") {
-          setPermissions(Object.fromEntries(ALL_NAV_ITEMS.map(i => [i.slug, true])));
-        } else if (roleData?.permissions && Array.isArray(roleData.permissions)) {
-          const perms: Record<string, boolean> = {};
-          ALL_NAV_ITEMS.forEach(i => {
-            perms[i.slug] = (roleData.permissions as string[]).includes(i.slug);
-          });
-          setPermissions(perms);
-        } else {
-          setPermissions(Object.fromEntries(ALL_NAV_ITEMS.map(i => [i.slug, true])));
+        const token = getToken();
+        if (!token) {
+          // No token — show all items; login redirect will handle auth
+          if (!cancelled) { setPermissions({}); setLoadingPerms(false); }
+          return;
+        }
+        const apiBase = (window as Window & { __MIKROBILL_API__?: string }).__MIKROBILL_API__
+          ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+        const res = await fetch(`${apiBase}/admin/my-permissions`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!cancelled) {
+          if (res.ok) {
+            const data = await res.json();
+            // Fall back to empty object (show-all) if shape is unexpected
+            setPermissions(data.success && data.permissions ? data.permissions : {});
+          } else {
+            // FIX: non-OK (401/403) — old code left permissions=null permanently here
+            setPermissions({});
+          }
+          setLoadingPerms(false);
         }
       } catch {
-        setPermissions(Object.fromEntries(ALL_NAV_ITEMS.map(i => [i.slug, true])));
+        // Network error — fail-open (auth enforced server-side)
+        if (!cancelled) {
+          setPermissions(Object.fromEntries(ALL_NAV_ITEMS.map(i => [i.slug, true])));
+          setLoadingPerms(false);
+        }
       }
     };
     fetchPerms();
+    return () => { cancelled = true; };
   }, [userRole]);
 
   const canSee = (slug: string): boolean => {
     if (userRole === "super_admin") return true;
-    if (permissions === null) return false;
+    // FIX: return true while loading — show all items dimmed, never an empty sidebar
+    if (loadingPerms || permissions === null) return true;
     return permissions[slug] !== false;
   };
 
@@ -103,6 +125,7 @@ const AdminSidebar = ({ onNavClick }: AdminSidebarProps) => {
 
   return (
     <aside className="h-full w-full bg-sidebar border-r border-sidebar-border flex flex-col">
+      {/* Logo / brand */}
       <div className="flex items-center gap-3 px-6 py-5 border-b border-sidebar-border shrink-0">
         <div className="h-9 w-9 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
           <Wifi className="h-5 w-5 text-primary" />
@@ -117,20 +140,26 @@ const AdminSidebar = ({ onNavClick }: AdminSidebarProps) => {
         </div>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto" aria-label="Main navigation">
+      {/* Navigation — dimmed while permissions are loading, never blank */}
+      <nav
+        className={`flex-1 px-3 py-4 space-y-0.5 overflow-y-auto transition-opacity duration-200 ${loadingPerms ? "opacity-50" : "opacity-100"}`}
+        aria-label="Main navigation"
+        aria-busy={loadingPerms}
+      >
         {visibleNav.map(item => {
           const isActive = location.pathname === item.path;
           return (
             <Link
               key={item.path}
               to={item.path}
-              onClick={onNavClick}
+              onClick={loadingPerms ? undefined : onNavClick}
               aria-current={isActive ? "page" : undefined}
               className={[
                 "flex items-center gap-3 px-3 py-2 rounded-md text-xs font-medium transition-all duration-150",
                 isActive
                   ? "bg-sidebar-accent text-primary"
                   : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                loadingPerms ? "pointer-events-none" : "",
               ].join(" ")}
             >
               <item.icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -140,12 +169,23 @@ const AdminSidebar = ({ onNavClick }: AdminSidebarProps) => {
         })}
       </nav>
 
+      {/* Footer */}
       <div className="px-3 py-4 border-t border-sidebar-border space-y-1 shrink-0">
-        <Link to="/hotspot" onClick={onNavClick} className="flex items-center gap-3 px-3 py-2 rounded-md text-xs text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-          <Wifi className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span>Captive Portal</span>
+        <Link
+          to="/hotspot"
+          onClick={onNavClick}
+          className="flex items-center gap-3 px-3 py-2 rounded-md text-xs text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+        >
+          <Wifi className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span>Captive Portal</span>
         </Link>
-        <Link to="/portal" onClick={onNavClick} className="flex items-center gap-3 px-3 py-2 rounded-md text-xs text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-          <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span>User Portal</span>
+        <Link
+          to="/portal"
+          onClick={onNavClick}
+          className="flex items-center gap-3 px-3 py-2 rounded-md text-xs text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+        >
+          <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span>User Portal</span>
         </Link>
         <div className="flex items-center justify-between px-3 py-2">
           <div className="flex items-center gap-3 min-w-0">
@@ -157,7 +197,12 @@ const AdminSidebar = ({ onNavClick }: AdminSidebarProps) => {
               <p className="text-[10px] text-sidebar-foreground truncate max-w-[120px]">{user?.email}</p>
             </div>
           </div>
-          <button onClick={signOut} aria-label={`Sign out (${user?.email})`} title="Sign out" className="p-1.5 rounded-md text-sidebar-foreground hover:bg-destructive/20 hover:text-destructive transition-colors">
+          <button
+            onClick={signOut}
+            aria-label={`Sign out (${user?.email})`}
+            title="Sign out"
+            className="p-1.5 rounded-md text-sidebar-foreground hover:bg-destructive/20 hover:text-destructive transition-colors"
+          >
             <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         </div>

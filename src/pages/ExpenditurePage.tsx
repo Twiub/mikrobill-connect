@@ -1,8 +1,7 @@
-// @ts-nocheck
 import { useState, useEffect } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import StatCard from "@/components/StatCard";
-import { supabase } from "@/integrations/supabase/client";
+import { authClient } from "@/lib/authClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -22,27 +21,36 @@ import { formatKES, useTransactions } from "@/hooks/useDatabase";
 const useExpenditures = () => useQuery({
   queryKey: ["expenditures"],
   queryFn: async () => {
-    const { data, error } = await supabase.from("expenditures").select("*, expenditure_categories(name,color)").order("expense_date", { ascending: false });
-    if (error) throw error;
-    return data;
+    const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
+    const res = await fetch(`${API}/api/admin/data/expenditures`, {
+      headers: { Authorization: `Bearer ${authClient.getToken()}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
   },
 });
 
 const useCategories = () => useQuery({
   queryKey: ["expenditure_categories"],
   queryFn: async () => {
-    const { data, error } = await supabase.from("expenditure_categories").select("*").order("name");
-    if (error) throw error;
-    return data ?? [];
+    const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
+    const res = await fetch(`${API}/api/admin/data/expenditure-categories`, {
+      headers: { Authorization: `Bearer ${authClient.getToken()}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
   },
 });
 
 const useStaff = () => useQuery({
   queryKey: ["staff"],
   queryFn: async () => {
-    const { data, error } = await supabase.from("staff").select("*").order("full_name");
-    if (error) throw error;
-    return data ?? [];
+    const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
+    const res = await fetch(`${API}/api/admin/data/staff`, {
+      headers: { Authorization: `Bearer ${authClient.getToken()}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
   },
 });
 
@@ -112,13 +120,23 @@ const ExpenditurePage = () => {
         // legacy category field - use first category name if possible
         category: expForm.category_id ? (catMap[expForm.category_id]?.name?.toLowerCase() ?? "other") : "other",
       };
+      const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
+      const token = authClient.getToken();
       if (editExpId) {
-        const { error } = await supabase.from("expenditures").update(payload).eq("id", editExpId);
-        if (error) throw error;
+        const res = await fetch(`${API}/api/admin/data/expenditures/${editExpId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         toast({ title: "Expense Updated" });
       } else {
-        const { error } = await supabase.from("expenditures").insert(payload);
-        if (error) throw error;
+        const res = await fetch(`${API}/api/admin/data/expenditures`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         toast({ title: "Expense Added" });
       }
       queryClient.invalidateQueries({ queryKey: ["expenditures"] });
@@ -132,11 +150,23 @@ const ExpenditurePage = () => {
     if (!catForm.name.trim()) { toast({ title: "Name required", variant: "destructive" }); return; }
     setSaving(true);
     try {
+      const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
+      const token = authClient.getToken();
       if (editCatId) {
-        await supabase.from("expenditure_categories").update({ name: catForm.name, color: catForm.color, is_recurring: catForm.is_recurring }).eq("id", editCatId);
+        const res = await fetch(`${API}/api/admin/data/expenditure-categories/${editCatId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ name: catForm.name, color: catForm.color, is_recurring: catForm.is_recurring }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         toast({ title: "Category Updated" });
       } else {
-        await supabase.from("expenditure_categories").insert({ name: catForm.name, color: catForm.color, is_recurring: catForm.is_recurring });
+        const res = await fetch(`${API}/api/admin/data/expenditure-categories`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ name: catForm.name, color: catForm.color, is_recurring: catForm.is_recurring }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         toast({ title: "Category Created" });
       }
       queryClient.invalidateQueries({ queryKey: ["expenditure_categories"] });
@@ -151,11 +181,23 @@ const ExpenditurePage = () => {
     setSaving(true);
     try {
       const payload: any = { full_name: staffForm.full_name, email: staffForm.email || null, phone: staffForm.phone || null, role: staffForm.role, department: staffForm.department || null, salary: staffForm.salary ? Number(staffForm.salary) : 0, recurring_day: Number(staffForm.recurring_day), hire_date: staffForm.hire_date || null, is_active: staffForm.is_active };
+      const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
+      const token = authClient.getToken();
       if (editStaffId) {
-        await supabase.from("staff").update(payload).eq("id", editStaffId);
+        const res = await fetch(`${API}/api/admin/data/staff/${editStaffId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         toast({ title: "Staff Updated" });
       } else {
-        await supabase.from("staff").insert(payload);
+        const res = await fetch(`${API}/api/admin/data/staff`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         toast({ title: "Staff Added" });
       }
       queryClient.invalidateQueries({ queryKey: ["staff"] });

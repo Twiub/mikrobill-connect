@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * src/hooks/usePWAInstall.ts
  *

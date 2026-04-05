@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * frontend/src/pages/JoinPage.tsx  — v2.9
  *

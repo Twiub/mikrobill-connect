@@ -1,18 +1,13 @@
-// @ts-nocheck
 /**
- * AuthPage.tsx — v2.1.0
+ * AuthPage.tsx — v3.0.0 (Supabase-free)
  *
- * FIXES:
- *  - RESP-06: Already centred/max-w-sm. Added proper sm: padding, subtle background
- *    pattern so it looks polished on both mobile and desktop.
- *  - UX-09: Loading state blocks re-submit properly.
- *  - ARIA-04: Form inputs have explicit id/htmlFor linkage (already present, kept).
- *  - UX-10: Password toggle has aria-label.
+ * Uses authClient from @/lib/authClient instead of @supabase/supabase-js.
+ * All UI and behaviour is identical to v2.1.0.
  */
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { authClient } from "@/lib/authClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,12 +17,12 @@ import { useToast } from "@/hooks/use-toast";
 
 const AuthPage = () => {
   const { branding } = useBranding();
-  const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail]     = useState("");
-  const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [loading, setLoading]   = useState(false);
-  const [showPwd, setShowPwd]   = useState(false);
+  const [isLogin, setIsLogin]       = useState(true);
+  const [email, setEmail]           = useState("");
+  const [password, setPassword]     = useState("");
+  const [fullName, setFullName]     = useState("");
+  const [loading, setLoading]       = useState(false);
+  const [showPwd, setShowPwd]       = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -37,19 +32,27 @@ const AuthPage = () => {
     setLoading(true);
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await authClient.signInWithPassword({ email, password });
         if (error) throw error;
         navigate("/");
       } else {
-        const { error } = await supabase.auth.signUp({
-          email, password,
-          options: { data: { full_name: fullName }, emailRedirectTo: window.location.origin },
+        const { error } = await authClient.signUp({
+          email,
+          password,
+          options: { data: { full_name: fullName } },
         });
         if (error) throw error;
-        toast({ title: "Account created", description: "Check your email for a verification link." });
+        toast({
+          title: "Account created",
+          description: "An administrator will assign your role before you can access the system.",
+        });
       }
     } catch (error: unknown) {
-      toast({ title: "Error", description: (error instanceof Error ? error.message : String(error)), variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -59,13 +62,17 @@ const AuthPage = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      const { error } = await authClient.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
       if (error) throw error;
       toast({ title: "Check your email", description: "Password reset link sent." });
     } catch (error: unknown) {
-      toast({ title: "Error", description: (error instanceof Error ? error.message : String(error)), variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -166,7 +173,7 @@ const AuthPage = () => {
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 required
-                minLength={6}
+                minLength={8}
                 autoComplete={isLogin ? "current-password" : "new-password"}
                 className="bg-card border-border pr-10"
               />

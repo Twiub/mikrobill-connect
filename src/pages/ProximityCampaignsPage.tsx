@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ProximityCampaignsPage.tsx — v1.0.0 (v3.13.0)
  * Admin → Proximity Campaigns

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * src/components/LocationConsentModal.tsx  — v3.4.0
  *

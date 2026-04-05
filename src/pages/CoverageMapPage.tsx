@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * src/pages/CoverageMapPage.tsx  — v3.4.0
  *
@@ -152,10 +151,10 @@ const CoverageMapPage = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // Load user locations from Supabase
-      const since = new Date(Date.now() - hours * 3600_000).toISOString();
-      const { data: locations } = await supabase.from("user_locations").select("*").gte("recorded_at", since);
-      const j: CoverageData = { points: (locations ?? []).map((l: any) => ({ lat: l.lat, lng: l.lng, weight: 1 })), total: locations?.length ?? 0 };
+      const r = await fetch(`/api/admin/coverage-map?hours=${hours}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      });
+      const j: CoverageData = await r.json();
       setData(j); setLastFetch(new Date()); renderStatic(j);
     } catch (err) { console.error("[CoverageMap] fetchData error:", err); } finally { setLoading(false); }
   }, [hours]); // eslint-disable-line
@@ -163,10 +162,10 @@ const CoverageMapPage = () => {
   const fetchPins = useCallback(async () => {
     setPinsLoading(true);
     try {
-      const since = new Date(Date.now() - pinWindow * 60_000).toISOString();
-      const { data: locations } = await supabase.from("user_locations").select("*").gte("recorded_at", since);
-      const pins = (locations ?? []).map((l: any) => ({ lat: l.lat, lng: l.lng, username: l.username ?? "Unknown", recorded_at: l.recorded_at }));
-      const j: PinsData = { pins, total: pins.length };
+      const r = await fetch(`/api/admin/subscriber-pins?minutes=${pinWindow}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      });
+      const j: PinsData = await r.json();
       setPinsData(j); renderPins(j.pins);
     } catch (err) { console.error("[CoverageMap] fetchPins error:", err); } finally { setPinsLoading(false); }
   }, [pinWindow]); // eslint-disable-line

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * frontend/src/pages/APDesk.jsx  — MikroBill Connect v3.10.21
  *
@@ -15,16 +14,14 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { supabase } from "../integrations/supabase/client";
+import { getToken } from "@/lib/authClient";
 
 const API  = "/api/admin/apdesk";
 const MESH = "/api/admin/meshdesk";
 
-async function _getAuthHeader() {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-  } catch { return {}; }
+function _getAuthHeader() {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 async function apiFetch(base, url, opts = {}) {
   const h = await _getAuthHeader();
@@ -877,10 +874,15 @@ export default function APDesk() {
   };
 
   if (selProfile) {
-    return <ProfileDetail profile={selProfile} onBack={() => { setSelProfile(null); load(); }} />;
+    return (
+      <AdminLayout>
+        <ProfileDetail profile={selProfile} onBack={() => { setSelProfile(null); load(); }} />
+      </AdminLayout>
+    );
   }
 
   return (
+    <AdminLayout>
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -966,5 +968,6 @@ export default function APDesk() {
         </Modal>
       )}
     </div>
+    </AdminLayout>
   );
 }

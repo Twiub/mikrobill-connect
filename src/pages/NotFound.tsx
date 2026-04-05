@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useLocation, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
