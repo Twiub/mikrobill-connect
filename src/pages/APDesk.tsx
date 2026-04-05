@@ -124,14 +124,14 @@ function LocationPicker({ lat, lon, onChange }) {
         l.href = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css";
         document.head.appendChild(l);
       }
-      if (!window.L) {
+      if (!(window as any).L) {
         await new Promise((res, rej) => {
           const s = document.createElement("script");
           s.src = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";
           s.onload = res; s.onerror = rej; document.body.appendChild(s);
         });
       }
-      const L = window.L;
+      const L = (window as any).L;
       const iLat = lat ? parseFloat(lat) : -1.2921;
       const iLon = lon ? parseFloat(lon) : 36.8219;
       leafletMap.current = L.map(mapRef.current).setView([iLat, iLon], lat ? 15 : 5);
