@@ -135,7 +135,7 @@ function ApLocationPicker({ lat, lon, onChange }: { lat: string; lon: string; on
           s.onload = () => res(); s.onerror = () => rej(); document.body.appendChild(s);
         });
       }
-      const L = (window as LeafletWindow).L as Record<string, (...args: unknown[]) => unknown>;
+      const L = (window as LeafletWindow).L as any;
       const iLat = lat ? parseFloat(lat) : -1.2921, iLon = lon ? parseFloat(lon) : 36.8219;
       leafletMap.current = L.map(mapRef.current).setView([iLat, iLon], lat ? 15 : 5);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap" }).addTo(leafletMap.current);

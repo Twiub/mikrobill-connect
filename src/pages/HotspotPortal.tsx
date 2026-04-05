@@ -151,6 +151,7 @@ interface Subscriber {
   phone: string;
   status: string;
   package_id: string | null;
+  [key: string]: any;
   expires_at: string | null;
   packages?: { name: string } | null;
   package_name?: string | null;
