@@ -115,8 +115,7 @@ export function useLocationTracking(authToken: string | null): LocationTrackingS
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setLastSent(new Date());
       setError(null);
-    } catch (err: unknown) {
-      // GPS errors are non-fatal — skip silently, log for debugging
+    } catch (err: any) {
       console.debug("Location report skipped:", err?.message);
       if (err?.code === err?.PERMISSION_DENIED) {
         setPermission("denied");
