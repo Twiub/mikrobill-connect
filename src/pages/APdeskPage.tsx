@@ -906,7 +906,7 @@ export default function APdeskPage() {
                     value={entryForm.exit_id}
                     onChange={e => setEntryForm(p => ({ ...p, exit_id: e.target.value }))}>
                     <option value="">— None / apply to all exits —</option>
-                    {profileExits.map((x: Record<string, unknown>) => (
+                    {profileExits.map((x: any) => (
                       <option key={x.id} value={x.id}>{x.name} ({x.gateway_type})</option>
                     ))}
                   </select>
