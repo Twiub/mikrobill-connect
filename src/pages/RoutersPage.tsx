@@ -26,32 +26,32 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-const EMPTY_FORM = {
-  // Step 1 — Basic
+const EMPTY_FORM: Record<string, any> = {
   name: "",
   ip_address: "",
-  dynamic_ip: false,        // true = LTE/Starlink/dynamic line; IP set by heartbeat
-  cgnat_mode: false,        // true = router is behind CGNAT; no direct API access possible
+  dynamic_ip: false,
+  cgnat_mode: false,
   location: "",
   secret_radius: "",
-  // API creds (collapsible)
   api_port: 8728,
   api_username: "admin",
   api_password: "",
   api_ssl: false,
   nas_ip: "",
-  // Step 2 — Topology
   wan_interface: "ether1",
   lan_interface: "bridge",
   hotspot_interface: "bridge",
   hotspot_address: "",
   portal_server_ip: "",
   wan_bandwidth_mbps: 100,
-  wan_speed_dynamic: false,  // true = LTE/Starlink; send wan_bandwidth_mbps=null (no global WAN queue)
+  wan_speed_dynamic: false,
   default_conn_limit: 300 as number | null,
   dhcp_pool: "192.168.88.10-192.168.88.254",
   dhcp_prefix_length: 24,
-  targeted_users: 0,        // 0 = manual entry; >0 = auto-computed pool
+  targeted_users: 0,
+  dlna_server_ip: "",
+  dlna_port: 8200,
+  dlna_enabled: null,
 };
 
 // ─── User Capacity → Auto Pool Computation (v3.19.2) ─────────────────────────

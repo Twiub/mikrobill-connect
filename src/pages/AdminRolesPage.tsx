@@ -81,7 +81,7 @@ const EDITABLE_ROLES = ["network_admin", "billing_admin", "support_agent", "fiel
 
 const AdminRolesPage = () => {
   const { data: userRoles = [] } = useUserRoles();
-  const admins = userRoles as Record<string, unknown>[];
+  const admins = userRoles as any[];
   const queryClient = useQueryClient();
   const { toast } = useToast();
 

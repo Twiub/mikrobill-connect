@@ -5,6 +5,8 @@ import { Wifi, Activity, ArrowDown, ArrowUp, Globe } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
+const CHART_TOOLTIP_STYLE = { backgroundColor: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" };
+
 const NetworkMonitorPage = () => {
   const { data: routers = [] } = useRouters();
   const { data: activeSessions = [] } = useActiveSessions();

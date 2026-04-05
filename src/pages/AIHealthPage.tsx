@@ -32,14 +32,14 @@ const AIHealthPage = () => {
   const { data: errorLogs = [] } = useErrorLogs();
 
   const rtrs   = routers  as Record<string, unknown>[];
-  const sess   = sessions as Record<string, unknown>[];
-  const errors = errorLogs as Record<string, unknown>[];
+  const sess   = sessions as any[];
+  const errors = errorLogs as any[];
 
   // Derive live health checks from real data
   const liveChecks = useMemo(() => {
     const onlineRouters  = rtrs.filter(r => r.status === "online").length;
     const totalRouters   = rtrs.length;
-    const recentErrors   = errors.filter(e => new Date(e.created_at) > new Date(Date.now() - 3600_000)).length;
+     const recentErrors   = errors.filter(e => new Date(e.created_at) > new Date(Date.now() - 3600_000)).length;
 
     return [
       {

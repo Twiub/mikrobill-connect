@@ -115,8 +115,7 @@ export function useLocationTracking(authToken: string | null): LocationTrackingS
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setLastSent(new Date());
       setError(null);
-    } catch (err: unknown) {
-      // GPS errors are non-fatal — skip silently, log for debugging
+    } catch (err: any) {
       console.debug("Location report skipped:", err?.message);
       if (err?.code === err?.PERMISSION_DENIED) {
         setPermission("denied");
@@ -164,7 +163,7 @@ export function useLocationTracking(authToken: string | null): LocationTrackingS
       await getCurrentPosition();
       localStorage.setItem(CONSENT_KEY, "granted");
       setPermission("granted");
-    } catch (err: unknown) {
+    } catch (err: any) {
       if (err?.code === 1 /* PERMISSION_DENIED */) {
         setPermission("denied");
         localStorage.setItem(CONSENT_KEY, "denied");

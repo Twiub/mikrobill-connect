@@ -15,6 +15,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getToken } from "@/lib/authClient";
+import AdminLayout from "@/components/AdminLayout";
 
 const API  = "/api/admin/apdesk";
 const MESH = "/api/admin/meshdesk";
@@ -38,7 +39,7 @@ const StatusBadge = ({ status }) => (
   <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${status === "online" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>{status}</span>
 );
 
-const Card = ({ title, children, action }) => (
+const Card = ({ title, children, action = null }: { title: any; children: any; action?: any }) => (
   <div className="bg-white rounded-xl shadow border border-gray-100 overflow-hidden">
     <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 bg-gray-50">
       <h3 className="font-semibold text-gray-700 text-sm">{title}</h3>
@@ -48,18 +49,18 @@ const Card = ({ title, children, action }) => (
   </div>
 );
 
-const Table = ({ cols, rows, onRow }) => (
+const Table = ({ cols, rows, onRow = undefined }: { cols: any; rows: any; onRow?: any }) => (
   <div className="overflow-x-auto">
     <table className="w-full text-sm">
       <thead>
         <tr className="border-b border-gray-100">
-          {cols.map(c => <th key={c.key} className="text-left py-2 px-3 text-gray-500 font-medium text-xs uppercase tracking-wide">{c.label}</th>)}
+          {cols.map((c: any) => <th key={c.key} className="text-left py-2 px-3 text-gray-500 font-medium text-xs uppercase tracking-wide">{c.label}</th>)}
         </tr>
       </thead>
       <tbody>
-        {rows.map((row, i) => (
-          <tr key={row.id ?? i} onClick={() => onRow?.(row)} className={`border-b border-gray-50 hover:bg-blue-50 ${onRow ? "cursor-pointer" : ""}`}>
-            {cols.map(c => <td key={c.key} className="py-2 px-3 text-gray-700">{c.render ? c.render(row[c.key], row) : String(row[c.key] ?? "")}</td>)}
+        {rows.map((row: any, i: number) => (
+          <tr key={row.id || i} className="border-b border-gray-50 hover:bg-blue-50/30 cursor-pointer transition-colors" onClick={() => onRow?.(row)}>
+            {cols.map((c: any) => <td key={c.key} className="py-2 px-3 text-gray-700">{c.render ? c.render(row[c.key], row) : (row[c.key] ?? "—")}</td>)}
           </tr>
         ))}
         {!rows.length && <tr><td colSpan={cols.length} className="py-6 text-center text-gray-400 text-xs">No records</td></tr>}
@@ -68,7 +69,7 @@ const Table = ({ cols, rows, onRow }) => (
   </div>
 );
 
-const Modal = ({ title, onClose, children, wide }) => (
+const Modal = ({ title, onClose, children, wide = false }: { title: any; onClose: any; children: any; wide?: any }) => (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
     <div className={`bg-white rounded-2xl shadow-2xl w-full ${wide ? "max-w-2xl" : "max-w-lg"} mx-4 max-h-[90vh] overflow-y-auto`}>
       <div className="flex items-center justify-between px-6 py-4 border-b sticky top-0 bg-white z-10">
@@ -80,12 +81,12 @@ const Modal = ({ title, onClose, children, wide }) => (
   </div>
 );
 
-const Field = ({ label, name, value, onChange, type = "text", options, placeholder, required, hint }) => (
+const Field = ({ label, name, value, onChange, type = "text", options = undefined, placeholder = undefined, required = false, hint = undefined }: { hint?: any; label: any; name: any; onChange: any; options?: any; placeholder?: any; required?: any; type?: string; value: any }) => (
   <div className="mb-4">
     <label className="block text-xs font-medium text-gray-600 mb-1">{label}{required && " *"}</label>
     {options ? (
       <select name={name} value={value ?? ""} onChange={onChange} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        {options.map((o: any) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     ) : (
       <input type={type} name={name} value={value ?? ""} onChange={onChange} placeholder={placeholder} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
@@ -123,14 +124,14 @@ function LocationPicker({ lat, lon, onChange }) {
         l.href = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css";
         document.head.appendChild(l);
       }
-      if (!window.L) {
+      if (!(window as any).L) {
         await new Promise((res, rej) => {
           const s = document.createElement("script");
           s.src = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";
           s.onload = res; s.onerror = rej; document.body.appendChild(s);
         });
       }
-      const L = window.L;
+      const L = (window as any).L;
       const iLat = lat ? parseFloat(lat) : -1.2921;
       const iLon = lon ? parseFloat(lon) : 36.8219;
       leafletMap.current = L.map(mapRef.current).setView([iLat, iLon], lat ? 15 : 5);
@@ -436,7 +437,7 @@ function NodeNodeTab({ profile }) {
     if (!node) return null;
     let bestTQ = null;
     Object.values(topo).forEach(t => {
-      (t.neighbors || []).forEach(e => {
+      ((t as any).neighbors || []).forEach((e: any) => {
         if (e.node_id === node.id) {
           if (bestTQ === null || e.tq > bestTQ) bestTQ = e.tq;
         }
@@ -505,7 +506,7 @@ function ProfileDetail({ profile: initialProfile, onBack }) {
   const [showEntryForm, setShowEntryForm] = useState(false);
   const [showExitForm,  setShowExitForm]  = useState(false);
   const [showApForm,    setShowApForm]    = useState(false);
-  const [form,          setForm]          = useState({});
+  const [form,          setForm]          = useState<Record<string, any>>({});
   const [tab,           setTab]           = useState("aps");
   // AP location picker state stored in form as form.lat / form.lon
 
@@ -839,7 +840,7 @@ export default function APDesk() {
   const [unknown,    setUnknown]    = useState([]);
   const [selProfile, setSelProfile] = useState(null);
   const [showForm,   setShowForm]   = useState(false);
-  const [form,       setForm]       = useState({});
+  const [form,       setForm]       = useState<Record<string, any>>({});
   const [tab,        setTab]        = useState("profiles");
 
   const load = useCallback(() => {

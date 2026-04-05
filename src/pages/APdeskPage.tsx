@@ -63,12 +63,14 @@ interface ProfileEntry {
   id: number; ssid: string; encryption: string; key: string;
   vlan_id: number | null; radius_ip: string; band: string;
   hidden: boolean; isolate: boolean;
+  [key: string]: any;
 }
 
 interface ProfileExit {
   id: number; name: string; gateway_type: string;
   radius_ip: string; radius_secret: string;
   uam_url: string; uam_secret: string; walled_garden: string;
+  [key: string]: any;
 }
 
 interface AccessPoint {
@@ -132,10 +134,10 @@ function ApLocationPicker({ lat, lon, onChange }: { lat: string; lon: string; on
         await new Promise<void>((res, rej) => {
           const s = document.createElement("script");
           s.src = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";
-          s.onload = res; s.onerror = rej; document.body.appendChild(s);
+          s.onload = () => res(); s.onerror = () => rej(); document.body.appendChild(s);
         });
       }
-      const L = (window as LeafletWindow).L as Record<string, (...args: unknown[]) => unknown>;
+      const L = (window as LeafletWindow).L as any;
       const iLat = lat ? parseFloat(lat) : -1.2921, iLon = lon ? parseFloat(lon) : 36.8219;
       leafletMap.current = L.map(mapRef.current).setView([iLat, iLon], lat ? 15 : 5);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap" }).addTo(leafletMap.current);
@@ -904,7 +906,7 @@ export default function APdeskPage() {
                     value={entryForm.exit_id}
                     onChange={e => setEntryForm(p => ({ ...p, exit_id: e.target.value }))}>
                     <option value="">— None / apply to all exits —</option>
-                    {profileExits.map((x: Record<string, unknown>) => (
+                    {profileExits.map((x: any) => (
                       <option key={x.id} value={x.id}>{x.name} ({x.gateway_type})</option>
                     ))}
                   </select>
