@@ -372,7 +372,7 @@ function MeshMapView({ nodes, topology }: {
         await new Promise<void>((res, rej) => {
           const s = document.createElement("script");
           s.src = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";
-          s.onload = res; s.onerror = rej; document.body.appendChild(s);
+          s.onload = () => res(); s.onerror = () => rej(); document.body.appendChild(s);
         });
       }
       const L = (window as any).L;
