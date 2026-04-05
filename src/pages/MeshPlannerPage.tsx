@@ -898,7 +898,7 @@ const MeshPlannerPage = () => {
     let i = 1;
     renderedKeysRef.current.forEach(key => {
       const [lS, gS] = key.split(":");
-      const s = db.slots[key] || {};
+      const s: SlotData = db.slots[key] || { status: "recommended" };
       csv += `S${i++},${lS},${gS},${s.status || "recommended"},"${(s.notes || "").replace(/"/g, '""')}",${s.placedLat || ""},${s.placedLng || ""},${s.offset != null ? s.offset.toFixed(0) : ""},${s.timestamp ? new Date(s.timestamp).toISOString() : ""}\n`;
     });
     dlFile(csv, "text/csv", `meshplan_${projName}_${new Date().toISOString().slice(0, 10)}.csv`);
