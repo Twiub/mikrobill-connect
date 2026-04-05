@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * src/pages/NetworkHierarchyPage.tsx — v3.6.0
  *
@@ -19,16 +18,16 @@ import {
   Globe, Plus, Trash2, RefreshCw, ChevronRight, ChevronDown, Cloud, MapPin, Edit,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { getToken } from "@/lib/authClient";
 
 const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
 async function apiFetch(path: string, opts: RequestInit = {}) {
-  const { data: { session } } = await supabase.auth.getSession();
+  const token = getToken();
   const res = await fetch(`${API}${path}`, {
     ...opts,
     headers: {
       "Content-Type": "application/json",
-      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(opts.headers ?? {}),
     },
   });

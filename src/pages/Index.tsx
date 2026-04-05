@@ -1,4 +1,3 @@
-// @ts-nocheck
 import AdminLayout from "@/components/AdminLayout";
 import { PanelErrorBoundary } from "@/components/ErrorBoundary";
 import StatCard from "@/components/StatCard";

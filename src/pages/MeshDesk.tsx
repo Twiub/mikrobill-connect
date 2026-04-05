@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * src/pages/MeshDesk.tsx — v3.11.0
  *
@@ -22,7 +21,10 @@
  *   │    │    wifi / wifi_pppoe / wifi_static
  *   │    └─ Delete / Reboot / Reconfigure actions
  *   ├─ Node↔Node topology — batman-adv originator table with TQ bars
- *   └─ Map — all nodes plotted on Leaflet/OpenStreetMap with status icons
+ *   └─ Map — nodes plotted on Leaflet/OSM with batman-adv connection lines
+ *            (green=good ≥70%, yellow=fair 40-69%, red dashed=weak <40%)
+ *            Gateway nodes shown with blue border ring
+ *            Map tab co-fetches topology so links draw immediately
  *  Unknown nodes (claim / dismiss)
  */
 
@@ -42,26 +44,21 @@ import {
   Link, Unlink, Router,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { getToken } from "@/lib/authClient";
 
 const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
 async function apiFetch(path: string, opts: RequestInit = {}) {
-  const { data: { session } } = await supabase.auth.getSession();
-  try {
-    const res = await fetch(`${API}${path}`, {
-      ...opts,
-      headers: {
-        "Content-Type": "application/json",
-        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-        ...(opts.headers ?? {}),
-      },
-    });
-    if (!res.ok) return { data: null, success: false, error: `HTTP ${res.status}` };
-    const text = await res.text();
-    try { return JSON.parse(text); } catch { return { data: null, success: false, error: "Invalid JSON response" }; }
-  } catch (err) {
-    return { data: null, success: false, error: String(err) };
-  }
+  const token = getToken();
+  const res = await fetch(`${API}${path}`, {
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(opts.headers ?? {}),
+    },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -355,10 +352,12 @@ function LocationPicker({ lat, lon, onChange }: {
 
 // ── Map sub-tab: all nodes in mesh plotted on Leaflet ─────────────────────────
 
-function MeshMapView({ nodes }: { nodes: MeshNode[] }) {
+function MeshMapView({ nodes, topology }: {
+  nodes: MeshNode[];
+  topology: { nodes: TopoNode[]; neighbors: TopoEdge[] } | undefined;
+}) {
   const mapRef     = useRef<HTMLDivElement>(null);
   const leafletMap = useRef<any>(null);
-  const markersRef = useRef<any[]>([]);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -378,7 +377,6 @@ function MeshMapView({ nodes }: { nodes: MeshNode[] }) {
       }
       const L = (window as any).L;
 
-      // destroy previous
       if (leafletMap.current) { leafletMap.current.remove(); leafletMap.current = null; }
 
       const nodesWithCoords = nodes.filter(n => n.lat != null && n.lon != null);
@@ -391,33 +389,66 @@ function MeshMapView({ nodes }: { nodes: MeshNode[] }) {
         attribution: "© OpenStreetMap contributors",
       }).addTo(leafletMap.current);
 
-      markersRef.current = nodesWithCoords.map(node => {
+      // Build mac → node lookup for drawing connection lines
+      const byMac: Record<string, MeshNode> = {};
+      for (const n of nodesWithCoords) byMac[n.mac.toLowerCase()] = n;
+
+      // Draw batman-adv connection lines between nodes that have coordinates.
+      // Deduplicate A↔B pairs so we only draw one line per link.
+      // Colour by best TQ reported for that pair: ≥70% green, ≥40% yellow, else red.
+      if (topology?.neighbors?.length) {
+        const linkBestTq: Record<string, number> = {};
+        for (const edge of topology.neighbors) {
+          const a = edge.from_mac.toLowerCase();
+          const b = edge.neighbour_mac.toLowerCase();
+          const key = [a, b].sort().join("|");
+          linkBestTq[key] = Math.max(linkBestTq[key] ?? 0, edge.tq);
+        }
+        for (const [key, tq] of Object.entries(linkBestTq)) {
+          const [ma, mb] = key.split("|");
+          const na = byMac[ma], nb = byMac[mb];
+          if (!na || !nb) continue;           // one or both nodes have no coordinates
+          const pct = Math.round((tq / 255) * 100);
+          const color = pct >= 70 ? "#22c55e" : pct >= 40 ? "#eab308" : "#ef4444";
+          const line = L.polyline(
+            [[na.lat!, na.lon!], [nb.lat!, nb.lon!]],
+            { color, weight: pct >= 70 ? 3 : 2, opacity: 0.85, dashArray: pct < 40 ? "6 4" : undefined }
+          ).addTo(leafletMap.current);
+          line.bindPopup(
+            `<strong>${na.name}</strong> ↔ <strong>${nb.name}</strong><br/>` +
+            `Link quality: <b>${pct}%</b> (TQ ${tq}/255)`
+          );
+        }
+      }
+
+      // Draw node markers on top of lines
+      const markers = nodesWithCoords.map(node => {
         const online = node.status === "online";
+        const isGw   = node.is_gateway;
         const icon = L.divIcon({
           className: "",
           html: `<div style="
-            width:12px;height:12px;border-radius:50%;
+            width:${isGw ? 16 : 12}px;height:${isGw ? 16 : 12}px;border-radius:50%;
             background:${online ? "#22c55e" : "#ef4444"};
-            border:2px solid white;
+            border:${isGw ? "3px solid #3b82f6" : "2px solid white"};
             box-shadow:0 1px 4px rgba(0,0,0,0.4);
           "></div>`,
-          iconSize: [12, 12],
-          iconAnchor: [6, 6],
+          iconSize:   [isGw ? 16 : 12, isGw ? 16 : 12],
+          iconAnchor: [isGw ? 8  : 6,  isGw ? 8  : 6],
         });
         const m = L.marker([node.lat!, node.lon!], { icon }).addTo(leafletMap.current);
-        m.bindPopup(`
-          <strong>${node.name}</strong><br/>
-          <code>${node.mac}</code><br/>
-          IP: ${node.ip || "—"}<br/>
-          ${node.contact_phone ? `📞 ${node.contact_phone}<br/>` : ""}
-          ${online ? "🟢 Online" : "🔴 Offline"} · ${ago(node.last_contact)}
-          ${node.is_gateway ? "<br/><b>Gateway</b>" : ""}
-        `);
+        m.bindPopup(
+          `<strong>${node.name}</strong>${isGw ? " <span style='color:#3b82f6'>(Gateway)</span>" : ""}<br/>` +
+          `<code style='font-size:11px'>${node.mac}</code><br/>` +
+          `IP: ${node.ip || "—"}<br/>` +
+          (node.contact_phone ? `📞 ${node.contact_phone}<br/>` : "") +
+          `${online ? "🟢 Online" : "🔴 Offline"} · ${ago(node.last_contact)}`
+        );
         return m;
       });
 
-      if (nodesWithCoords.length > 1) {
-        const group = L.featureGroup(markersRef.current);
+      if (markers.length > 1) {
+        const group = L.featureGroup(markers);
         leafletMap.current.fitBounds(group.getBounds().pad(0.2));
       }
     };
@@ -425,9 +456,17 @@ function MeshMapView({ nodes }: { nodes: MeshNode[] }) {
     return () => {
       if (leafletMap.current) { leafletMap.current.remove(); leafletMap.current = null; }
     };
-  }, [nodes]);
+  }, [nodes, topology]);
 
   const nodesWithCoords = nodes.filter(n => n.lat != null && n.lon != null);
+  const linkCount = (() => {
+    if (!topology?.neighbors?.length) return 0;
+    const seen = new Set<string>();
+    for (const e of topology.neighbors) {
+      seen.add([e.from_mac, e.neighbour_mac].map(m => m.toLowerCase()).sort().join("|"));
+    }
+    return seen.size;
+  })();
 
   return (
     <div className="p-3 space-y-2">
@@ -436,7 +475,8 @@ function MeshMapView({ nodes }: { nodes: MeshNode[] }) {
           Nodes on Map
         </span>
         <span className="text-[10px] text-muted-foreground">
-          {nodesWithCoords.length} of {nodes.length} nodes have coordinates
+          {nodesWithCoords.length} of {nodes.length} nodes plotted
+          {linkCount > 0 && ` · ${linkCount} link${linkCount !== 1 ? "s" : ""} drawn`}
         </span>
       </div>
       {nodesWithCoords.length === 0 ? (
@@ -445,13 +485,16 @@ function MeshMapView({ nodes }: { nodes: MeshNode[] }) {
           No nodes have GPS coordinates yet. Edit a node and set its location.
         </div>
       ) : (
-        <div ref={mapRef} style={{ height: 380, borderRadius: 8, border: "1px solid var(--border)" }} />
+        <div ref={mapRef} style={{ height: 420, borderRadius: 8, border: "1px solid var(--border)" }} />
       )}
       {nodesWithCoords.length > 0 && (
-        <div className="flex gap-3 text-[10px] text-muted-foreground">
+        <div className="flex flex-wrap gap-3 text-[10px] text-muted-foreground">
           <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" /> Online</span>
           <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> Offline</span>
-          <span className="ml-auto">Click a marker for details</span>
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 inline-block border-t-2 border-green-500" style={{height:0,width:16}} /> Good link (≥70%)</span>
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 inline-block border-t-2 border-yellow-400" style={{height:0,width:16}} /> Fair link (40–69%)</span>
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 inline-block border-t-2 border-red-500 border-dashed" style={{height:0,width:16}} /> Weak link (&lt;40%)</span>
+          <span className="ml-auto">Gateway nodes have blue border · click any marker or line for details</span>
         </div>
       )}
     </div>
@@ -568,7 +611,7 @@ export default function MeshDeskPage() {
         apiFetch("/admin/meshdesk/timezones"),
         apiFetch("/admin/meshdesk/clouds"),
         apiFetch("/admin/meshdesk/networks"),
-        fetch(`${API}/admin/routers`, { headers: { Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` } }).then(r => r.json()).catch(() => ({ routers: [] })),
+        fetch(`${API}/admin/routers`, { headers: { Authorization: `Bearer ${getToken()}` } }).then(r => r.json()).catch(() => ({ routers: [] })),
       ]);
       setOverview(ovr.data);
       setMeshes(ml.data || []);
@@ -591,7 +634,11 @@ export default function MeshDeskPage() {
       if (which === "entries"  && (force || !entriesBy[meshId])) { const r = await apiFetch(`/admin/meshdesk/meshes/${meshId}/entries`);  setEntriesBy(p => ({ ...p, [meshId]: r.data || [] })); }
       if (which === "exits"    && (force || !exitsBy[meshId]))   { const r = await apiFetch(`/admin/meshdesk/meshes/${meshId}/exits`);    setExitsBy(p => ({ ...p, [meshId]: r.data || [] })); }
       if (which === "topology" && (force || !topoBy[meshId]))    { const r = await apiFetch(`/admin/meshdesk/meshes/${meshId}/topology`); setTopoBy(p => ({ ...p, [meshId]: r.data || { nodes: [], neighbors: [] } })); }
-      if (which === "map"      && (force || !nodesBy[meshId]))   { const r = await apiFetch(`/admin/meshdesk/meshes/${meshId}/nodes`);    setNodesBy(p => ({ ...p, [meshId]: r.data || [] })); }
+      if (which === "map") {
+        // Map needs both node coordinates AND topology edges to draw connection lines
+        if (force || !nodesBy[meshId])  { const r = await apiFetch(`/admin/meshdesk/meshes/${meshId}/nodes`);    setNodesBy(p => ({ ...p, [meshId]: r.data || [] })); }
+        if (force || !topoBy[meshId])   { const r = await apiFetch(`/admin/meshdesk/meshes/${meshId}/topology`); setTopoBy(p => ({ ...p, [meshId]: r.data || { nodes: [], neighbors: [] } })); }
+      }
     } catch { /* silent */ }
   };
 
@@ -1604,7 +1651,7 @@ export default function MeshDeskPage() {
 
                       {/* ── Map ──────────────────────────────────────────────── */}
                       {activeSub === "map" && (
-                        <MeshMapView nodes={nodesBy[mesh.id] || []} />
+                        <MeshMapView nodes={nodesBy[mesh.id] || []} topology={topoBy[mesh.id]} />
                       )}
 
                     </div>
@@ -1649,9 +1696,9 @@ export default function MeshDeskPage() {
 
       {/* Add/Edit Mesh */}
       <Dialog open={meshDlg.open} onOpenChange={o => setMeshDlg(p => ({ ...p, open: o }))}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{meshDlg.mode === "add" ? "Create Mesh Network" : "Edit Mesh"}</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-2">
+        <DialogContent className="max-h-[90vh] flex flex-col">
+          <DialogHeader className="shrink-0"><DialogTitle>{meshDlg.mode === "add" ? "Create Mesh Network" : "Edit Mesh"}</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2 flex-1 overflow-y-auto pr-1">
             <div><Label className="text-xs">Name *</Label><Input className="mt-1" placeholder="e.g. Nairobi CBD Mesh" value={meshForm.name} onChange={e => setMeshForm(p => ({ ...p, name: e.target.value }))} /></div>
             <div><Label className="text-xs">Description</Label><Input className="mt-1" placeholder="Optional" value={meshForm.description} onChange={e => setMeshForm(p => ({ ...p, description: e.target.value }))} /></div>
 

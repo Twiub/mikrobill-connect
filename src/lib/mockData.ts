@@ -1,4 +1,18 @@
 // Mock data for WiFi Billing System v2.0
+//
+// BUG-INFO-03 FIX: This file must NOT be imported in production components.
+// Any import of this file in production code will display hardcoded demo data
+// instead of live Supabase data. Guard all imports with:
+//   if (import.meta.env.DEV) { ... }
+// or move usage to Storybook / test files only.
+//
+// TODO: Audit all imports of this file and migrate to live Supabase hooks.
+if (typeof window !== "undefined" && import.meta.env.PROD) {
+  console.error(
+    "[BUG-INFO-03] mockData.ts imported in production build. " +
+    "This will display hardcoded demo data. Remove this import."
+  );
+}
 
 export interface Package {
   id: string;

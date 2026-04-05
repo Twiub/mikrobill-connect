@@ -1,18 +1,9 @@
-// @ts-nocheck
 import AdminLayout from "@/components/AdminLayout";
 import { useRouters, useActiveSessions, formatBytes } from "@/hooks/useDatabase";
 import StatusBadge from "@/components/StatusBadge";
 import { Wifi, Activity, ArrowDown, ArrowUp, Globe } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-
-const CHART_TOOLTIP_STYLE: React.CSSProperties = {
-  backgroundColor: "hsl(var(--popover))",
-  border: "1px solid hsl(var(--border))",
-  borderRadius: "8px",
-  color: "hsl(var(--popover-foreground))",
-  fontSize: "12px",
-};
 
 const NetworkMonitorPage = () => {
   const { data: routers = [] } = useRouters();

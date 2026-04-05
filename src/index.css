@@ -68,12 +68,6 @@
   body {
     @apply bg-background text-foreground font-sans antialiased;
   }
-
-  html {
-    scroll-behavior: smooth;
-    -webkit-tap-highlight-color: transparent;
-    scrollbar-gutter: stable;
-  }
 }
 
 @layer utilities {
@@ -88,11 +82,67 @@
   .text-gradient {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-[hsl(var(--primary))] to-[hsl(var(--info))];
   }
+}
 
+/* ═══════════════════════════════════════════════════════════════
+   PERFORMANCE & RESPONSIVENESS FIXES — v4.0.0
+   ════════════════════════════════════════════════════════════════ */
+
+@layer base {
+  /* Smooth scrolling for in-page navigation */
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Prevent layout shift from scrollbar appearing/disappearing */
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  /* Better touch targets on mobile — minimum 44px per Apple/Google HIG */
+  button, a, [role="button"] {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* Suppress the above for tiny badge/icon elements */
+  .text-\[10px\], .text-xs > button,
+  td button, th button {
+    min-height: unset;
+  }
+}
+
+@layer utilities {
+  /* Focus ring — visible only on keyboard nav (not mouse click) */
   .focus-ring {
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
   }
 
+  /* Instant content reveal — no fade-in delay */
+  .instant {
+    animation: none !important;
+    transition-duration: 0ms !important;
+  }
+
+  /* Skeleton pulse — slightly faster than default for perceived speed */
+  @keyframes skeleton-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .animate-pulse {
+    animation: skeleton-pulse 1.2s ease-in-out infinite;
+  }
+
+  /* Slide-in for mobile sidebar */
+  @keyframes slide-in-left {
+    from { transform: translateX(-100%); }
+    to   { transform: translateX(0); }
+  }
+
+  /* Prevent text overflow in table cells */
   .table-cell-nowrap {
     white-space: nowrap;
     overflow: hidden;
@@ -101,6 +151,15 @@
   }
 }
 
+/* ── Mobile-specific overrides ───────────────────────────────── */
+@media (max-width: 1023px) {
+  /* Ensure page content is not hidden behind mobile top bar */
+  main {
+    min-height: calc(100vh - 3.5rem);
+  }
+}
+
+/* ── Scrollbar styling ───────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -119,6 +178,11 @@
   background: hsl(var(--muted-foreground));
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   ACCESSIBILITY: Respect reduced-motion OS preference
+   Prevents vestibular-disorder issues and saves GPU on low-end
+   phones (Tecno, Itel, budget Androids common on hotspot networks)
+   ════════════════════════════════════════════════════════════════ */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
