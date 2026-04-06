@@ -130,10 +130,8 @@ function BatchRow({ batch, onCancelBatch, onExport }: {
     if (codes.length) return;
     setLoading(true);
     try {
-      const h = await authHeaders();
-      const r = await fetch(`${API}/admin/vouchers/${batch.batch_id}`, { headers: h });
-      const d = await r.json();
-      if (d.success) setCodes(d.vouchers);
+      const { data } = await supabase.from("vouchers").select("*").eq("batch_id", batch.batch_id).order("created_at");
+      if (data) setCodes(data as any);
     } catch { /* non-fatal */ }
     setLoading(false);
   };
