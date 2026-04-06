@@ -329,12 +329,8 @@ const RoutersPage = () => {
     if (!deleteId) return;
     setDeleteDeleting(true);
     try {
-      const res = await fetch(`/api/admin/routers/${deleteId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${getToken() ?? ""}` },
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || "Delete failed");
+      const { error } = await supabase.from("routers").delete().eq("id", deleteId);
+      if (error) throw error;
       toast({ title: "Router Removed" });
       queryClient.invalidateQueries({ queryKey: ["routers"] });
       setDeleteId(null);
