@@ -191,32 +191,13 @@ const NotificationsPage = () => {
     }
     setSending(true);
     try {
-      const notifAPI = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
-      const notifRes = await fetch(`${notifAPI}/api/admin/data/notifications`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authClient.getToken()}` },
-        body: JSON.stringify({
-          type: "broadcast", title: broadcast.title, message: broadcast.message,
-          channel: broadcast.channel, target: broadcast.target,
-          status: "pending", sent_at: new Date().toISOString(),
-        }),
+      const { error } = await supabase.from("notifications").insert({
+        type: "broadcast" as any, title: broadcast.title, message: broadcast.message,
+        channel: broadcast.channel as any, target: broadcast.target as any,
+        status: "pending" as any, sent_at: new Date().toISOString(),
       });
-      if (!notifRes.ok) throw new Error(`HTTP ${notifRes.status}`);
-      // BUG-P3-CRIT-09 FIX: Previously .catch(() => {}) swallowed all errors and showed
-      // "Broadcast Queued" even when the backend call failed. Now errors are surfaced.
-      const apiBase = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
-      const token = getToken() ?? "";
-      const bcastRes = await fetch(`${apiBase}/admin/notifications/broadcast`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify(broadcast),
-      });
-      if (!bcastRes.ok) {
-        const bcastData = await bcastRes.json().catch(() => ({}));
-        throw new Error(bcastData.error ?? `Broadcast failed (${bcastRes.status})`);
-      }
-      const bcastData = await bcastRes.json();
-      toast({ title: "Broadcast Queued", description: `Queued for ${bcastData.queued ?? "?"} subscriber(s)` });
+      if (error) throw error;
+      toast({ title: "Broadcast Queued" });
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
       setBroadcastOpen(false);
       setBroadcast({ title: "", message: "", channel: "both", target: "all" });
