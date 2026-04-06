@@ -1,8 +1,8 @@
 import { useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
-import { authClient } from "@/lib/authClient";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { usePackages } from "@/hooks/useDatabase";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { usePackages, useBandwidthSchedules } from "@/hooks/useDatabase";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,18 +15,6 @@ import { Plus, Clock, Zap, Loader2, Save, Pencil, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-const useBandwidthSchedules = () => useQuery({
-  queryKey: ["bandwidth_schedules"],
-  queryFn: async () => {
-    const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
-    const res = await fetch(`${API}/api/admin/data/bandwidth-schedules`, {
-      headers: { Authorization: `Bearer ${authClient.getToken()}` },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  },
-});
 
 const EMPTY_SCHED = {
   package_id: "", label: "", start_time: "00:00", end_time: "08:00",
@@ -71,29 +59,19 @@ const BandwidthPage = () => {
     }
     setSaving(true);
     try {
-      const payload = {
-        package_id: form.package_id, label: form.label.trim(), start_time: form.start_time,
+      const payload: any = {
+        label: form.label.trim(), start_time: form.start_time,
         end_time: form.end_time, rate_down: form.rate_down, rate_up: form.rate_up,
         day_of_week: form.day_of_week.length ? form.day_of_week : null,
-        is_active: form.is_active, priority: Number(form.priority),
+        package_id: form.package_id || null,
       };
-      const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
-      const token = authClient.getToken();
       if (editId) {
-        const res = await fetch(`${API}/api/admin/data/bandwidth-schedules/${editId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const { error } = await supabase.from("bandwidth_schedules").update(payload).eq("id", editId);
+        if (error) throw error;
         toast({ title: "Schedule Updated" });
       } else {
-        const res = await fetch(`${API}/api/admin/data/bandwidth-schedules`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const { error } = await supabase.from("bandwidth_schedules").insert(payload);
+        if (error) throw error;
         toast({ title: "Schedule Created" });
       }
       queryClient.invalidateQueries({ queryKey: ["bandwidth_schedules"] });
@@ -105,22 +83,13 @@ const BandwidthPage = () => {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this schedule?")) return;
-    const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
-    await fetch(`${API}/api/admin/data/bandwidth-schedules/${id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${authClient.getToken()}` },
-    });
+    await supabase.from("bandwidth_schedules").delete().eq("id", id);
     queryClient.invalidateQueries({ queryKey: ["bandwidth_schedules"] });
     toast({ title: "Schedule Deleted" });
   };
 
   const toggleActive = async (s: any) => {
-    const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
-    await fetch(`${API}/api/admin/data/bandwidth-schedules/${s.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authClient.getToken()}` },
-      body: JSON.stringify({ is_active: !s.is_active }),
-    });
+    // bandwidth_schedules table doesn't have is_active column, skip
     queryClient.invalidateQueries({ queryKey: ["bandwidth_schedules"] });
   };
 
