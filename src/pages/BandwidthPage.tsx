@@ -1,8 +1,8 @@
 import { useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
-import { authClient } from "@/lib/authClient";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { usePackages } from "@/hooks/useDatabase";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { usePackages, useBandwidthSchedules } from "@/hooks/useDatabase";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,20 +13,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Plus, Clock, Zap, Loader2, Save, Pencil, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-
-const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-const useBandwidthSchedules = () => useQuery({
-  queryKey: ["bandwidth_schedules"],
-  queryFn: async () => {
-    const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
-    const res = await fetch(`${API}/api/admin/data/bandwidth-schedules`, {
-      headers: { Authorization: `Bearer ${authClient.getToken()}` },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  },
-});
 
 const EMPTY_SCHED = {
   package_id: "", label: "", start_time: "00:00", end_time: "08:00",
