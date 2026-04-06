@@ -15,6 +15,8 @@ import { Plus, Clock, Zap, Loader2, Save, Pencil, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const EMPTY_SCHED = {
   package_id: "", label: "", start_time: "00:00", end_time: "08:00",
   rate_down: "5M", rate_up: "2M", day_of_week: [] as number[],
   is_active: true, priority: 10,
