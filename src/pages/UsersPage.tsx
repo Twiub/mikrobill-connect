@@ -3,7 +3,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import AdminLayout from "@/components/AdminLayout";
 import StatusBadge from "@/components/StatusBadge";
 import { useSubscribers, usePackages, useRouters, formatKES } from "@/hooks/useDatabase";
-import { getToken } from "@/lib/authClient";
+import { supabase } from "@/integrations/supabase/client";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
