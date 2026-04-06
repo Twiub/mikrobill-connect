@@ -1,7 +1,7 @@
 import { useDebounce } from "@/hooks/useDebounce";
 import { useState, useEffect } from "react";
 import AdminLayout from "@/components/AdminLayout";
-import { getToken } from "@/lib/authClient";
+import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { usePackages } from "@/hooks/useDatabase";
 import {
@@ -14,40 +14,6 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-interface Batch {
-  batch_id: string;
-  batch_label: string;
-  created_at: string;
-  package_id: string;
-  package_name: string;
-  price: number;
-  duration_days: number;
-  total: number;
-  active: number;
-  redeemed: number;
-  cancelled: number;
-  expired: number;
-  expires_at: string | null;
-}
-
-interface VoucherCode {
-  id: string;
-  code: string;
-  status: "active" | "redeemed" | "cancelled" | "expired";
-  expires_at: string | null;
-  redeemed_at: string | null;
-  redeemed_by_name: string | null;
-  redeemed_by_phone: string | null;
-  created_at: string;
-}
-
-const API = import.meta.env.VITE_BACKEND_URL ?? "/api";
-
-function authHeaders() {
-  return { "Content-Type": "application/json", Authorization: `Bearer ${getToken() ?? ""}` };
-}
 
 // ── Status pill ───────────────────────────────────────────────────────────────
 function StatusPill({ status }: { status: string }) {
