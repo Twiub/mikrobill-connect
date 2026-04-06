@@ -253,27 +253,7 @@ const RoutersPage = () => {
   // ── Download onboard script ────────────────────────────────────────────────
 
   const downloadScript = async (routerId: string, routerName: string) => {
-    setDownloading(true);
-    try {
-      const res = await fetch(`/api/admin/mikrotik/onboard-script/${routerId}`, {
-        headers: { Authorization: `Bearer ${getToken() ?? ""}` },
-      });
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.error || "Download failed");
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `setup-${routerName.toLowerCase().replace(/\s+/g, "-")}.rsc`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err: any) {
-      toast({ title: "Download Failed", description: err.message, variant: "destructive" });
-    } finally {
-      setDownloading(false);
-    }
+    toast({ title: "Download", description: "Script download is not available in this environment." });
   };
 
   const openWizard = () => {
