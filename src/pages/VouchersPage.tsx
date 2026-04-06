@@ -15,7 +15,34 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-// ── Status pill ───────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface Batch {
+  batch_id: string;
+  batch_label: string;
+  created_at: string;
+  package_id: string;
+  package_name: string;
+  price: number;
+  duration_days: number;
+  total: number;
+  active: number;
+  redeemed: number;
+  cancelled: number;
+  expired: number;
+  expires_at: string | null;
+}
+
+interface VoucherCode {
+  id: string;
+  code: string;
+  status: "active" | "redeemed" | "cancelled" | "expired";
+  expires_at: string | null;
+  redeemed_at: string | null;
+  redeemed_by_name: string | null;
+  redeemed_by_phone: string | null;
+  created_at: string;
+}
+
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
     active:    { color: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30", icon: <CheckCircle2 className="h-3 w-3" />, label: "Active" },
