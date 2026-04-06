@@ -56,7 +56,7 @@ const AuthPage = () => {
               <Wifi className="h-8 w-8 text-primary" />
             </div>
           </div>
-          <h1 className="text-2xl font-bold">{branding?.isp_name || "WiFi Billing System"}</h1>
+          <h1 className="text-2xl font-bold">{branding?.company_name || "WiFi Billing System"}</h1>
           <p className="text-sm text-muted-foreground mt-2">
             {isLogin ? "Sign in to your admin account" : "Create a new admin account"}
           </p>
