@@ -12,9 +12,9 @@
 
 import { useState, useMemo } from "react";
 import AdminLayout from "@/components/AdminLayout";
-import { authClient, getToken } from "@/lib/authClient";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSubscribers } from "@/hooks/useDatabase";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { useSubscribers, useNotifications as useNotificationsHook, useNotificationTemplates } from "@/hooks/useDatabase";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,35 +32,8 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-// ── Data fetching ─────────────────────────────────────────────────────────────
-
-const useNotifications = (since?: string) => useQuery({
-  queryKey: ["notifications", since ?? "all"],
-  queryFn: async () => {
-    const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
-    const url = since
-      ? `${API}/api/admin/data/notifications?since=${encodeURIComponent(since)}`
-      : `${API}/api/admin/data/notifications`;
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${authClient.getToken()}` },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  },
-  refetchInterval: 30000,
-});
-
-const useTemplates = () => useQuery({
-  queryKey: ["notification_templates"],
-  queryFn: async () => {
-    const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
-    const res = await fetch(`${API}/api/admin/data/notification-templates`, {
-      headers: { Authorization: `Bearer ${authClient.getToken()}` },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  },
-});
+const useNotifications = useNotificationsHook;
+const useTemplates = useNotificationTemplates;
 
 // ── Static maps ───────────────────────────────────────────────────────────────
 
