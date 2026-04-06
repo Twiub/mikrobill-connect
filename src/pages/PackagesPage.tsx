@@ -1,7 +1,7 @@
 import { useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { usePackages, formatKES } from "@/hooks/useDatabase";
-import { authClient, getToken } from "@/lib/authClient";
+import { supabase } from "@/integrations/supabase/client";
 import { Zap, Plus, Pencil, Save, Loader2, Wifi, Network, Radio, HelpCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
