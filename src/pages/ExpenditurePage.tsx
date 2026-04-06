@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import StatCard from "@/components/StatCard";
-import { authClient } from "@/lib/authClient";
+import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -16,43 +16,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Receipt, TrendingDown, Calculator, Wallet, Loader2, Save, Pencil, Tag, Users } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useToast } from "@/hooks/use-toast";
-import { formatKES, useTransactions } from "@/hooks/useDatabase";
+import { formatKES, useTransactions, useExpenditures, useExpenditureCategories, useStaff } from "@/hooks/useDatabase";
 
-const useExpenditures = () => useQuery({
-  queryKey: ["expenditures"],
-  queryFn: async () => {
-    const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
-    const res = await fetch(`${API}/api/admin/data/expenditures`, {
-      headers: { Authorization: `Bearer ${authClient.getToken()}` },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  },
-});
-
-const useCategories = () => useQuery({
-  queryKey: ["expenditure_categories"],
-  queryFn: async () => {
-    const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
-    const res = await fetch(`${API}/api/admin/data/expenditure-categories`, {
-      headers: { Authorization: `Bearer ${authClient.getToken()}` },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  },
-});
-
-const useStaff = () => useQuery({
-  queryKey: ["staff"],
-  queryFn: async () => {
-    const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
-    const res = await fetch(`${API}/api/admin/data/staff`, {
-      headers: { Authorization: `Bearer ${authClient.getToken()}` },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  },
-});
+const useCategories = useExpenditureCategories;
 
 const EMPTY_EXP = { description: "", amount: "", category_id: "", staff_id: "", expense_date: new Date().toISOString().slice(0, 10), is_recurring: false, notes: "" };
 const EMPTY_CAT = { name: "", color: "#6366f1", is_recurring: false };
