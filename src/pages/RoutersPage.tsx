@@ -3,7 +3,7 @@ import AdminLayout from "@/components/AdminLayout";
 import { PanelErrorBoundary } from "@/components/ErrorBoundary";
 import StatusBadge from "@/components/StatusBadge";
 import { useRouters } from "@/hooks/useDatabase";
-import { getToken } from "@/lib/authClient";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Wifi, AlertTriangle, Settings, Plus, Loader2, Save, Eye, EyeOff,
   Download, Trash2, CheckCircle2, ChevronRight, ChevronLeft, Terminal,
