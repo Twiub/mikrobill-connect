@@ -309,41 +309,10 @@ const RoutersPage = () => {
     try {
       const payload: any = {
         name: editForm.name.trim(),
-        ip_address: editForm.dynamic_ip ? null : editForm.ip_address.trim(),
-        dynamic_ip: editForm.dynamic_ip,
-        cgnat_mode: editForm.cgnat_mode,
-        api_port: Number(editForm.api_port),
-        api_username: editForm.api_username,
-        api_password: editForm.api_password,
-        api_ssl: editForm.api_ssl,
-        location: editForm.location || null,
-        nas_ip: editForm.nas_ip || null,
-        secret_radius: editForm.secret_radius || null,
-        wan_interface: editForm.wan_interface,
-        lan_interface: editForm.lan_interface,
-        hotspot_interface: editForm.hotspot_interface,
-        hotspot_address: editForm.hotspot_address || null,
-        portal_server_ip: editForm.portal_server_ip || null,
-        wan_bandwidth_mbps: editForm.wan_speed_dynamic ? null : (Number(editForm.wan_bandwidth_mbps) || null),
-        default_conn_limit: editForm.default_conn_limit != null ? Number(editForm.default_conn_limit) : null,
-        dhcp_pool: editForm.dhcp_pool || null,
-        dhcp_prefix_length: editForm.dhcp_prefix_length || 24,
-        // BUG-DLNA-01 FIX: per-router DLNA settings
-        // Empty string → null (use global setting); explicit value overrides global
-        dlna_server_ip: (editForm as any).dlna_server_ip?.trim() || null,
-        dlna_port: (editForm as any).dlna_port ? Number((editForm as any).dlna_port) : null,
-        dlna_enabled: (editForm as any).dlna_enabled,  // null = inherit global
+        ip_address: editForm.dynamic_ip ? "0.0.0.0" : editForm.ip_address.trim(),
       };
-      const res = await fetch(`/api/admin/routers/${editId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${getToken() ?? ""}`,
-        },
-        body: JSON.stringify(payload),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || json.errors?.[0]?.msg || "Update failed");
+      const { error } = await supabase.from("routers").update(payload).eq("id", editId);
+      if (error) throw error;
       toast({ title: "Router Updated", description: `${editForm.name} saved.` });
       queryClient.invalidateQueries({ queryKey: ["routers"] });
       setEditOpen(false);
