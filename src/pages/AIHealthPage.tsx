@@ -26,7 +26,8 @@ const overallStyles: Record<string, string> = {
 
 const AIHealthPage = () => {
   const queryClient = useQueryClient();
-  const { data: report }   = useAiHealthReports();
+  const { data: reports }   = useAiHealthReports();
+  const report = reports?.[0];
   const { data: routers = [] }  = useRouters();
   const { data: sessions = [] } = useActiveSessions();
   const { data: errorLogs = [] } = useErrorLogs();
