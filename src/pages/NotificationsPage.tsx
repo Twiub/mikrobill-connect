@@ -215,13 +215,10 @@ const NotificationsPage = () => {
     setSavingTpl(true);
     try {
       if (editTplId) {
-        const tplAPI = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
-        const tplRes = await fetch(`${tplAPI}/api/admin/data/notification-templates/${editTplId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${authClient.getToken()}` },
-          body: JSON.stringify({ title: tplForm.title, body: tplForm.body, channel: tplForm.channel, enabled: tplForm.enabled }),
-        });
-        if (!tplRes.ok) throw new Error(`HTTP ${tplRes.status}`);
+        const { error } = await supabase.from("notification_templates").update({
+          title: tplForm.title, body: tplForm.body, type: tplForm.channel ?? "sms",
+        }).eq("id", editTplId);
+        if (error) throw error;
         toast({ title: "Template Updated" });
       }
       queryClient.invalidateQueries({ queryKey: ["notification_templates"] });
