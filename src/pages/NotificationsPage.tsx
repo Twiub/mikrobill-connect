@@ -134,14 +134,15 @@ const RateCard = ({ label, sent, failed, pending, icon: Icon, iconClass }: RateC
 const NotificationsPage = () => {
   const [statRange, setStatRange] = useState<"7d" | "30d" | "all">("7d");
 
-  const since7d  = new Date(Date.now() -  7 * 86400_000).toISOString();
-  const since30d = new Date(Date.now() - 30 * 86400_000).toISOString();
-  const sinceStat = statRange === "7d" ? since7d : statRange === "30d" ? since30d : undefined;
-
-  // Stats query uses the range filter; history table always loads latest 500
-  const { data: statNotifs = [], refetch: refetchStats } = useNotifications(sinceStat);
-  const { data: allNotifs  = [], refetch: refetchAll   } = useNotifications();
-  const { data: templates  = [] } = useTemplates();
+  const { data: allNotifs = [], refetch: refetchAll } = useNotifications();
+  const refetchStats = refetchAll;
+  const statNotifs = useMemo(() => {
+    if (statRange === "all") return allNotifs;
+    const days = statRange === "7d" ? 7 : 30;
+    const cutoff = new Date(Date.now() - days * 86400_000).toISOString();
+    return (allNotifs as any[]).filter((n: any) => n.created_at >= cutoff);
+  }, [allNotifs, statRange]);
+  const { data: templates = [] } = useTemplates();
   const { data: subscribers = [] } = useSubscribers();
   const queryClient = useQueryClient();
   const { toast }   = useToast();
