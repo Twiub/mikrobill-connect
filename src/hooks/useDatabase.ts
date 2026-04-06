@@ -1,134 +1,239 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { authClient } from "@/lib/authClient";
+import { supabase } from "@/integrations/supabase/client";
 
-const API = () => (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "");
-const authFetch = (path: string, opts?: RequestInit) =>
-  fetch(`${API()}${path}`, {
-    ...opts,
-    headers: { Authorization: `Bearer ${authClient.getToken()}`, ...(opts?.headers ?? {}) },
-  }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
+// ── Queries ──────────────────────────────────────────────────────────────────
 
-// LOW-03 FIX v3.19.0: Added .limit(500) and server-side search to useSubscribers.
-// At 1,000+ subscribers the admin Users page fetched all rows (no limit) and filtered
-// client-side — at 5,000 users this becomes a 1MB+ payload crashing the browser tab.
-// Now: server-side search via backend filter, limited to 500 rows.
-// The search string passed from UsersPage is applied server-side for efficiency.
 export const useSubscribers = (search?: string) =>
   useQuery({
     queryKey: ["subscribers", search],
-    queryFn: async () =>
-      authFetch(`/api/admin/data/subscribers${search ? `?search=${encodeURIComponent(search)}` : ""}`),
+    queryFn: async () => {
+      let q = supabase.from("subscribers").select("*, packages(name)").order("created_at", { ascending: false }).limit(500);
+      if (search) {
+        q = q.or(`full_name.ilike.%${search}%,username.ilike.%${search}%,phone.ilike.%${search}%`);
+      }
+      const { data, error } = await q;
+      if (error) throw error;
+      return data;
+    },
   });
 
 export const usePackages = () =>
   useQuery({
     queryKey: ["packages"],
-    staleTime: 5 * 60_000,   // packages change rarely — 5min cache
-    queryFn: async () => authFetch("/api/admin/data/packages"),
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("packages").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
   });
 
-// MED-01 FIX v3.19.0: Added .limit(200) to all unbounded queries.
-// Previously useTransactions() fetched ALL rows with no limit. After 30 days
-// with 1,000 users (15,000+ transaction rows), the admin TransactionsPage would
-// freeze the browser rendering thousands of table rows, sometimes crashing the tab.
-// Same issue affected useSubscribers (1,000+ rows), useErrorLogs (unbounded).
-// Default limit 200 rows — operators can paginate using the date-range controls.
 export const useTransactions = (limit = 200) =>
   useQuery({
     queryKey: ["transactions", limit],
-    queryFn: async () => authFetch(`/api/admin/data/transactions?limit=${limit}`),
+    queryFn: async () => {
+      const { data, error } = await supabase.from("transactions").select("*").order("created_at", { ascending: false }).limit(limit);
+      if (error) throw error;
+      return data;
+    },
   });
 
-// CRIT-04 FIX v3.19.0: useActiveSessions previously queried 'active_sessions'
-// which is a legacy Supabase-era table never written by the Node.js backend.
-// RADIUS accounting (radius.js:366) writes to 'hotspot_active_sessions'.
-// With the old hook, the Sessions admin page always showed 0 sessions even
-// with 1,000 users connected — admins were completely blind to live traffic.
-// Fix: backend endpoint queries hotspot_active_sessions joined with subscribers for display names.
 export const useActiveSessions = () =>
   useQuery({
     queryKey: ["active_sessions"],
-    queryFn: async () => authFetch("/api/admin/data/active-sessions"),
-    // Refresh every 30 seconds for live monitoring
+    queryFn: async () => {
+      const { data, error } = await supabase.from("active_sessions").select("*").order("started_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
     refetchInterval: 30_000,
   });
 
 export const useTickets = () =>
   useQuery({
     queryKey: ["tickets"],
-    queryFn: async () => authFetch("/api/admin/data/tickets"),
+    queryFn: async () => {
+      const { data, error } = await supabase.from("tickets").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
   });
 
 export const useRouters = () =>
   useQuery({
     queryKey: ["routers"],
-    staleTime: 2 * 60_000,   // router list changes infrequently — 2min cache
-    queryFn: async () => authFetch("/api/admin/data/routers"),
+    staleTime: 2 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("routers").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
   });
 
 export const useKycRecords = () =>
   useQuery({
     queryKey: ["kyc_records"],
-    queryFn: async () => authFetch("/api/admin/data/kyc-records"),
+    queryFn: async () => {
+      const { data, error } = await supabase.from("kyc_records").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
   });
 
 export const useErrorLogs = () =>
   useQuery({
     queryKey: ["error_logs"],
-    // LOW-03 FIX v3.19.0: limit(200) — error_logs can grow very large on busy deployments
-    queryFn: async () => authFetch("/api/admin/data/error-logs?limit=200"),
+    queryFn: async () => {
+      const { data, error } = await supabase.from("error_logs").select("*").order("created_at", { ascending: false }).limit(200);
+      if (error) throw error;
+      return data;
+    },
   });
 
 export const useExpenditures = () =>
   useQuery({
     queryKey: ["expenditures"],
-    queryFn: async () => authFetch("/api/admin/data/expenditures"),
+    queryFn: async () => {
+      const { data, error } = await supabase.from("expenditures").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
   });
 
 export const useBandwidthSchedules = () =>
   useQuery({
     queryKey: ["bandwidth_schedules"],
-    queryFn: async () => authFetch("/api/admin/data/bandwidth-schedules"),
+    queryFn: async () => {
+      const { data, error } = await supabase.from("bandwidth_schedules").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
   });
 
 export const useNotifications = () =>
   useQuery({
     queryKey: ["notifications"],
-    queryFn: async () => authFetch("/api/admin/data/notifications"),
+    queryFn: async () => {
+      const { data, error } = await supabase.from("notifications").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
   });
 
 export const useSharingViolations = () =>
   useQuery({
     queryKey: ["sharing_violations"],
-    queryFn: async () => authFetch("/api/admin/data/sharing-violations"),
+    queryFn: async () => {
+      const { data, error } = await supabase.from("sharing_violations").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
   });
 
 export const useIpBindings = () =>
   useQuery({
     queryKey: ["ip_bindings"],
-    queryFn: async () => authFetch("/api/admin/data/ip-bindings"),
+    queryFn: async () => {
+      const { data, error } = await supabase.from("ip_bindings").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
   });
 
 export const useUserRoles = () =>
   useQuery({
     queryKey: ["user_roles"],
-    queryFn: async () => authFetch("/api/admin/data/user-roles"),
+    queryFn: async () => {
+      const { data, error } = await supabase.from("user_roles").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
   });
 
 export const useConnectedDevices = (subscriberId?: string) =>
   useQuery({
     queryKey: ["connected_devices", subscriberId],
-    queryFn: async () =>
-      authFetch(`/api/admin/data/connected-devices${subscriberId ? `?subscriberId=${subscriberId}` : ""}`),
+    queryFn: async () => {
+      let q = supabase.from("connected_devices").select("*");
+      if (subscriberId) q = q.eq("subscriber_id", subscriberId);
+      const { data, error } = await q;
+      if (error) throw error;
+      return data;
+    },
   });
 
 export const useAiHealthReports = () =>
   useQuery({
     queryKey: ["ai_health_reports"],
-    queryFn: async () => authFetch("/api/admin/data/ai-health"),
+    queryFn: async () => {
+      const { data, error } = await supabase.from("ai_health_reports").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
   });
 
-// Helper
+export const useStaff = () =>
+  useQuery({
+    queryKey: ["staff"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("staff").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+export const useExpenditureCategories = () =>
+  useQuery({
+    queryKey: ["expenditure_categories"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("expenditure_categories").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+export const useNotificationTemplates = () =>
+  useQuery({
+    queryKey: ["notification_templates"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("notification_templates").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+export const useMpesaConfig = () =>
+  useQuery({
+    queryKey: ["mpesa_config"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("mpesa_config").select("*");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+export const useVouchers = () =>
+  useQuery({
+    queryKey: ["vouchers"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("vouchers").select("*, voucher_batches(batch_label, packages(name))").order("created_at", { ascending: false }).limit(500);
+      if (error) throw error;
+      return data;
+    },
+  });
+
+export const useVoucherBatches = () =>
+  useQuery({
+    queryKey: ["voucher_batches"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("voucher_batches").select("*, packages(name)").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
 export function formatKES(amount: number): string {
   return `KES ${amount.toLocaleString()}`;
 }
@@ -146,12 +251,11 @@ export function formatBytes(bytes: number): string {
 export const useAddSubscriber = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: Record<string, unknown>) =>
-      authFetch("/api/admin/data/subscribers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      }),
+    mutationFn: async (data: Record<string, unknown>) => {
+      const { data: result, error } = await supabase.from("subscribers").insert(data as any).select().single();
+      if (error) throw error;
+      return result;
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["subscribers"] }),
   });
 };
@@ -159,12 +263,11 @@ export const useAddSubscriber = () => {
 export const useUpdateSubscriber = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...data }: { id: string; [key: string]: unknown }) =>
-      authFetch(`/api/admin/data/subscribers/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      }),
+    mutationFn: async ({ id, ...data }: { id: string; [key: string]: unknown }) => {
+      const { data: result, error } = await supabase.from("subscribers").update(data as any).eq("id", id).select().single();
+      if (error) throw error;
+      return result;
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["subscribers"] }),
   });
 };
@@ -172,12 +275,11 @@ export const useUpdateSubscriber = () => {
 export const useAddPackage = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: Record<string, unknown>) =>
-      authFetch("/api/admin/data/packages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      }),
+    mutationFn: async (data: Record<string, unknown>) => {
+      const { data: result, error } = await supabase.from("packages").insert(data as any).select().single();
+      if (error) throw error;
+      return result;
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["packages"] }),
   });
 };
@@ -185,12 +287,11 @@ export const useAddPackage = () => {
 export const useUpdatePackage = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...data }: { id: string; [key: string]: unknown }) =>
-      authFetch(`/api/admin/data/packages/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      }),
+    mutationFn: async ({ id, ...data }: { id: string; [key: string]: unknown }) => {
+      const { data: result, error } = await supabase.from("packages").update(data as any).eq("id", id).select().single();
+      if (error) throw error;
+      return result;
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["packages"] }),
   });
 };
@@ -198,36 +299,11 @@ export const useUpdatePackage = () => {
 export const useAddRouter = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: Record<string, unknown>) =>
-      authFetch("/api/admin/data/routers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      }),
+    mutationFn: async (data: Record<string, unknown>) => {
+      const { data: result, error } = await supabase.from("routers").insert(data as any).select().single();
+      if (error) throw error;
+      return result;
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["routers"] }),
   });
 };
-
-export const useStaff = () =>
-  useQuery({
-    queryKey: ["staff"],
-    queryFn: async () => authFetch("/api/admin/data/staff"),
-  });
-
-export const useExpenditureCategories = () =>
-  useQuery({
-    queryKey: ["expenditure_categories"],
-    queryFn: async () => authFetch("/api/admin/data/expenditure-categories"),
-  });
-
-export const useNotificationTemplates = () =>
-  useQuery({
-    queryKey: ["notification_templates"],
-    queryFn: async () => authFetch("/api/admin/data/notification-templates"),
-  });
-
-export const useMpesaConfig = () =>
-  useQuery({
-    queryKey: ["mpesa_config"],
-    queryFn: async () => authFetch("/api/admin/data/mpesa-config"),
-  });
