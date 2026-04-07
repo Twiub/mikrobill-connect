@@ -1,7 +1,6 @@
 import { useDebounce } from "@/hooks/useDebounce";
 import { useState, useEffect } from "react";
 import AdminLayout from "@/components/AdminLayout";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { usePackages } from "@/hooks/useDatabase";
 import {
@@ -43,6 +42,13 @@ interface VoucherCode {
   created_at: string;
 }
 
+const API = import.meta.env.VITE_BACKEND_URL ?? "/api";
+
+function authHeaders() {
+  return { "Content-Type": "application/json" };
+}
+
+// ── Status pill ───────────────────────────────────────────────────────────────
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
     active:    { color: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30", icon: <CheckCircle2 className="h-3 w-3" />, label: "Active" },
@@ -130,8 +136,10 @@ function BatchRow({ batch, onCancelBatch, onExport }: {
     if (codes.length) return;
     setLoading(true);
     try {
-      const { data } = await supabase.from("vouchers").select("*").eq("batch_id", batch.batch_id).order("created_at");
-      if (data) setCodes(data as any);
+      const h = await authHeaders();
+      const r = await fetch(`/admin/vouchers/${batch.batch_id}`, { headers: h });
+      const d = await r.json();
+      if (d.success) setCodes(d.vouchers);
     } catch { /* non-fatal */ }
     setLoading(false);
   };
@@ -279,61 +287,44 @@ export default function VouchersPage() {
   const loadBatches = async () => {
     setLoading(true);
     try {
-      const { data: batchData } = await supabase.from("voucher_batches").select("*, packages(name, price, duration_days)").order("created_at", { ascending: false });
-      if (batchData) {
-        // For each batch, count vouchers by status
-        const enriched: Batch[] = [];
-        for (const b of batchData) {
-          const { count: total } = await supabase.from("vouchers").select("*", { count: "exact", head: true }).eq("batch_id", b.batch_id);
-          const { count: active } = await supabase.from("vouchers").select("*", { count: "exact", head: true }).eq("batch_id", b.batch_id).eq("status", "active");
-          const { count: redeemed } = await supabase.from("vouchers").select("*", { count: "exact", head: true }).eq("batch_id", b.batch_id).eq("status", "redeemed");
-          enriched.push({
-            batch_id: b.batch_id, batch_label: b.batch_label, created_at: b.created_at,
-            package_id: b.package_id ?? "", package_name: (b as any).packages?.name ?? "Unknown",
-            price: (b as any).packages?.price ?? 0, duration_days: (b as any).packages?.duration_days ?? 0,
-            total: total ?? 0, active: active ?? 0, redeemed: redeemed ?? 0, cancelled: 0, expired: 0,
-            expires_at: b.expires_at,
-          });
-        }
-        setBatches(enriched);
-      }
+      const h = await authHeaders();
+      const r = await fetch(`/admin/vouchers`, { headers: h });
+      const d = await r.json();
+      if (d.success) setBatches(d.batches);
     } catch {
       toast({ title: "Error", description: "Failed to load vouchers", variant: "destructive" });
     }
     setLoading(false);
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadBatches(); }, []);
 
   const handleGenerate = async () => {
     if (!form.packageId || !form.count) return;
     setGenerating(true);
     try {
-      const count = parseInt(form.count);
-      const batchId = crypto.randomUUID();
-      // Create batch
-      const { error: batchErr } = await supabase.from("voucher_batches").insert({
-        batch_id: batchId, package_id: form.packageId, batch_label: form.batchLabel || "",
-        expires_at: form.expiresAt || null,
+      const h = await authHeaders();
+      const r = await fetch(`/admin/vouchers/generate`, {
+        method: "POST", headers: h,
+        body: JSON.stringify({
+          packageId: form.packageId,
+          count: parseInt(form.count),
+          expiresAt: form.expiresAt || null,
+          batchLabel: form.batchLabel || null,
+        }),
       });
-      if (batchErr) throw batchErr;
-      // Generate voucher codes
-      const codes = Array.from({ length: count }, () => {
-        const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-        return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-      });
-      const vouchers = codes.map(code => ({
-        batch_id: batchId, code, status: "active",
-        expires_at: form.expiresAt || null,
-      }));
-      const { error: vErr } = await supabase.from("vouchers").insert(vouchers);
-      if (vErr) throw vErr;
-      toast({ title: "✅ Vouchers generated", description: `${count} codes created` });
-      setGenOpen(false);
-      setForm({ packageId: "", count: "10", expiresAt: "", batchLabel: "" });
-      loadBatches();
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      const d = await r.json();
+      if (d.success) {
+        toast({ title: "✅ Vouchers generated", description: `${d.count} codes created for ${d.package.name}` });
+        setGenOpen(false);
+        setForm({ packageId: "", count: "10", expiresAt: "", batchLabel: "" });
+        loadBatches();
+      } else {
+        toast({ title: "Error", description: d.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Network error", variant: "destructive" });
     }
     setGenerating(false);
   };
@@ -342,27 +333,40 @@ export default function VouchersPage() {
     if (!cancelOpen) return;
     setCancelling(true);
     try {
-      const { error } = await supabase.from("vouchers").update({ status: "cancelled" }).eq("batch_id", cancelOpen.batchId).eq("status", "active");
-      if (error) throw error;
-      toast({ title: "Batch cancelled" });
-      setCancelOpen(null);
-      loadBatches();
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      const h = await authHeaders();
+      const r = await fetch(`/admin/vouchers/cancel-batch`, {
+        method: "POST", headers: h,
+        body: JSON.stringify({ batchId: cancelOpen.batchId }),
+      });
+      const d = await r.json();
+      if (d.success) {
+        toast({ title: "Batch cancelled", description: `${d.cancelled} codes cancelled` });
+        setCancelOpen(null);
+        loadBatches();
+      } else {
+        toast({ title: "Error", description: d.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Network error", variant: "destructive" });
     }
     setCancelling(false);
   };
 
   const handleExport = async (batchId: string, label: string) => {
     try {
-      const { data } = await supabase.from("vouchers").select("*").eq("batch_id", batchId).eq("status", "active");
-      if (!data) return;
+      const h = await authHeaders();
+      const r = await fetch(`/admin/vouchers/${batchId}`, { headers: h });
+      const d = await r.json();
+      if (!d.success) return;
+      const active = d.vouchers.filter((v: VoucherCode) => v.status === "active");
+      // FIX: CRLF line endings for Windows Excel compatibility; escape commas/quotes in fields
+      const escapeCsv = (val: string | null) => val ? `"${val.replace(/"/g, '""')}"` : "";
       const csv = ["Code,Status,Expires"].concat(
-        data.map((v: any) => `${v.code},${v.status},${v.expires_at ?? ""}`)
-      ).join("\n");
+        active.map((v: VoucherCode) => `${v.code},${v.status},${escapeCsv(v.expires_at ?? null)}`)
+      ).join("\r\n"); // FIX: was \n — breaks Excel on Windows
       const blob = new Blob([csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
       a.href = url; a.download = `vouchers-${label.replace(/\s+/g, "-")}.csv`; a.click();
       URL.revokeObjectURL(url);
     } catch {

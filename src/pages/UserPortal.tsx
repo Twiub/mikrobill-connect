@@ -89,14 +89,14 @@ function setPortalToken(token: string, rememberDays = 30) {
   }
 }
 
-const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+/api");
 
 async function apiCall(method: string, path: string, body?: object, token?: string | null) {
   const res = await fetch(`${API}${path}`, {
     method,
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ,
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -115,9 +115,9 @@ async function apiCall(method: string, path: string, body?: object, token?: stri
 async function fetchUsageHistory(token: string | null, days = 7): Promise<{day: string; usage: number}[]> {
   if (!token) return [];
   try {
-    const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
-    const res  = await fetch(`${API}/portal/usage-history?days=${days}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    /api");
+    const res  = await fetch(`/portal/usage-history?days=${days}`, {
+      headers: token ? { } : {},
     });
     if (!res.ok) throw new Error("fetch failed");
     const data = await res.json();
@@ -297,7 +297,7 @@ const UserPortal = () => {
       if (token) {
         fetch("/api/portal/keepalive", {
           method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          headers: {, "Content-Type": "application/json" },
         }).catch(() => {});
       }
     };
@@ -511,7 +511,7 @@ const UserPortal = () => {
     try {
       const res = await fetch(`${import.meta.env.VITE_BACKEND_URL ?? "/api"}/portal/redeem-voucher`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code }),
       });
       const data = await res.json();

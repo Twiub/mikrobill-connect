@@ -18,16 +18,13 @@ import {
   Globe, Plus, Trash2, RefreshCw, ChevronRight, ChevronDown, Cloud, MapPin, Edit,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { getToken } from "@/lib/authClient";
-
-const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+/api");
 async function apiFetch(path: string, opts: RequestInit = {}) {
-  const token = getToken();
   const res = await fetch(`${API}${path}`, {
     ...opts,
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ,
       ...(opts.headers ?? {}),
     },
   });

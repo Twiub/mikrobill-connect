@@ -14,7 +14,6 @@
 
 import { useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
-import { getToken } from "@/lib/authClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Table, TableBody, TableCell, TableHead,
@@ -194,14 +193,11 @@ function RateBar({ cur, max, label, colorClass }: {
 }
 
 // ── API helper ────────────────────────────────────────────────────────────────
-const API = (window as Window & { __MIKROBILL_API__?: string }).__MIKROBILL_API__
-  ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+const API = "";
 
 async function apiFetch(path: string) {
-  const token = getToken();
   const res = await fetch(`${API}${path}`, {
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  });
+    });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -312,13 +308,12 @@ const AutoRatePage = () => {
     }
     setSaving(true);
     try {
-      const token = getToken();
       if (!token) throw new Error("Not authenticated");
 
       const apiBase = import.meta.env.VITE_API_URL ?? "";
-      const res = await fetch(`${apiBase}/api/admin/routers/${editRouter.id}/wan`, {
+      const res = await fetch(`/api/admin/routers/${editRouter.id}/wan`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           wan_type:           form.wan_type,
           max_bandwidth_mbps: parseInt(form.max_bandwidth_mbps),

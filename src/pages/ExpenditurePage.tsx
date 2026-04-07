@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import StatCard from "@/components/StatCard";
-import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -16,9 +15,37 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Receipt, TrendingDown, Calculator, Wallet, Loader2, Save, Pencil, Tag, Users } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useToast } from "@/hooks/use-toast";
-import { formatKES, useTransactions, useExpenditures, useExpenditureCategories, useStaff } from "@/hooks/useDatabase";
+import { formatKES, useTransactions } from "@/hooks/useDatabase";
 
-const useCategories = useExpenditureCategories;
+const useExpenditures = () => useQuery({
+  queryKey: ["expenditures"],
+  queryFn: async () => {
+    const res = await fetch(`/api/admin/data/expenditures`, {
+      });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+});
+
+const useCategories = () => useQuery({
+  queryKey: ["expenditure_categories"],
+  queryFn: async () => {
+    const res = await fetch(`/api/admin/data/expenditure-categories`, {
+      });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+});
+
+const useStaff = () => useQuery({
+  queryKey: ["staff"],
+  queryFn: async () => {
+    const res = await fetch(`/api/admin/data/staff`, {
+      });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+});
 
 const EMPTY_EXP = { description: "", amount: "", category_id: "", staff_id: "", expense_date: new Date().toISOString().slice(0, 10), is_recurring: false, notes: "" };
 const EMPTY_CAT = { name: "", color: "#6366f1", is_recurring: false };
@@ -48,9 +75,10 @@ const ExpenditurePage = () => {
     ?.filter((t: any) => t.status === "success")
     ?.reduce((s: number, t: any) => s + Number(t.amount), 0) ?? 0;
   const taxRate = 16;
-  const taxableIncome = grossRevenue - totalExpenses;
+  const grossIncome = Math.max(0, grossRevenue);
+  const taxableIncome = Math.max(0, grossIncome - totalExpenses); // FIX: clamp to 0 on loss months
   const taxDue = Math.round(taxableIncome * taxRate / 100);
-  const netProfit = taxableIncome - taxDue;
+  const netProfit = grossIncome - totalExpenses - taxDue; // FIX: correct formula
 
   const catMap: Record<string, { name: string; color: string }> = {};
   (categories as any[]).forEach((c) => { catMap[c.id] = { name: c.name, color: c.color }; });
@@ -83,15 +111,24 @@ const ExpenditurePage = () => {
         category_id: expForm.category_id || null, staff_id: expForm.staff_id || null,
         expense_date: expForm.expense_date, is_recurring: expForm.is_recurring,
         notes: expForm.notes || null, added_by: "admin",
+        // legacy category field - use first category name if possible
         category: expForm.category_id ? (catMap[expForm.category_id]?.name?.toLowerCase() ?? "other") : "other",
       };
       if (editExpId) {
-        const { error } = await supabase.from("expenditures").update(payload).eq("id", editExpId);
-        if (error) throw error;
+        const res = await fetch(`/api/admin/data/expenditures/${editExpId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         toast({ title: "Expense Updated" });
       } else {
-        const { error } = await supabase.from("expenditures").insert(payload);
-        if (error) throw error;
+        const res = await fetch(`/api/admin/data/expenditures`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         toast({ title: "Expense Added" });
       }
       queryClient.invalidateQueries({ queryKey: ["expenditures"] });
@@ -106,12 +143,20 @@ const ExpenditurePage = () => {
     setSaving(true);
     try {
       if (editCatId) {
-        const { error } = await supabase.from("expenditure_categories").update({ name: catForm.name, color: catForm.color, is_recurring: catForm.is_recurring }).eq("id", editCatId);
-        if (error) throw error;
+        const res = await fetch(`/api/admin/data/expenditure-categories/${editCatId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: catForm.name, color: catForm.color, is_recurring: catForm.is_recurring }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         toast({ title: "Category Updated" });
       } else {
-        const { error } = await supabase.from("expenditure_categories").insert({ name: catForm.name, color: catForm.color, is_recurring: catForm.is_recurring });
-        if (error) throw error;
+        const res = await fetch(`/api/admin/data/expenditure-categories`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: catForm.name, color: catForm.color, is_recurring: catForm.is_recurring }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         toast({ title: "Category Created" });
       }
       queryClient.invalidateQueries({ queryKey: ["expenditure_categories"] });
@@ -127,12 +172,20 @@ const ExpenditurePage = () => {
     try {
       const payload: any = { full_name: staffForm.full_name, email: staffForm.email || null, phone: staffForm.phone || null, role: staffForm.role, department: staffForm.department || null, salary: staffForm.salary ? Number(staffForm.salary) : 0, recurring_day: Number(staffForm.recurring_day), hire_date: staffForm.hire_date || null, is_active: staffForm.is_active };
       if (editStaffId) {
-        const { error } = await supabase.from("staff").update(payload).eq("id", editStaffId);
-        if (error) throw error;
+        const res = await fetch(`/api/admin/data/staff/${editStaffId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         toast({ title: "Staff Updated" });
       } else {
-        const { error } = await supabase.from("staff").insert(payload);
-        if (error) throw error;
+        const res = await fetch(`/api/admin/data/staff`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         toast({ title: "Staff Added" });
       }
       queryClient.invalidateQueries({ queryKey: ["staff"] });

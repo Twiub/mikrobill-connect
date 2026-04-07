@@ -17,10 +17,9 @@ import { Button } from "@/components/ui/button";
 import { Lock, Unlock, Link2, Globe, Shield } from "lucide-react";
 import StatusBadge from "@/components/StatusBadge";
 import { useToast } from "@/hooks/use-toast";
-import { getToken } from "@/lib/authClient";
-
 const IPBindingPage = () => {
-  const { data: users = [] } = useSubscribers();
+  const { data: subsResult = null } = useSubscribers();
+  const users = (subsResult as any)?.data ?? (Array.isArray(subsResult) ? subsResult : []);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [loading, setLoading] = useState<string | null>(null);
@@ -28,7 +27,7 @@ const IPBindingPage = () => {
   const boundUsers   = users.filter((u: any) => u.mac_binding || u.static_ip);
   const unboundUsers = users.filter((u: any) => !u.mac_binding && !u.static_ip);
 
-  const apiBase = () => (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+  .__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
 
 
   // BUG-P3-CRIT-07 FIX: Bind / Unbind MAC
@@ -45,9 +44,9 @@ const IPBindingPage = () => {
       }
       setLoading(`mac-${u.id}`);
       try {
-        const res = await fetch(`${apiBase()}/admin/subscribers/${u.id}/mac-binding`, {
+        const res = await fetch(`/admin/subscribers/${u.id}/mac-binding`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await getToken()}` },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mac_binding: mac.trim().toUpperCase() }),
         });
         const data = await res.json();
@@ -61,9 +60,9 @@ const IPBindingPage = () => {
     }
     setLoading(`mac-${u.id}`);
     try {
-      const res = await fetch(`${apiBase()}/admin/subscribers/${u.id}/mac-binding`, {
+      const res = await fetch(`/admin/subscribers/${u.id}/mac-binding`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${await getToken()}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mac_binding: null }),
       });
       const data = await res.json();
@@ -81,9 +80,9 @@ const IPBindingPage = () => {
       if (!confirm(`Release static IP ${u.static_ip} from ${u.username}?`)) return;
       setLoading(`ip-${u.id}`);
       try {
-        const res = await fetch(`${apiBase()}/admin/subscribers/${u.id}/static-ip`, {
+        const res = await fetch(`/admin/subscribers/${u.id}/static-ip`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await getToken()}` },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ static_ip: null }),
         });
         const data = await res.json();
@@ -98,9 +97,9 @@ const IPBindingPage = () => {
       if (!ip) return;
       setLoading(`ip-${u.id}`);
       try {
-        const res = await fetch(`${apiBase()}/admin/subscribers/${u.id}/static-ip`, {
+        const res = await fetch(`/admin/subscribers/${u.id}/static-ip`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await getToken()}` },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ static_ip: ip.trim() }),
         });
         const data = await res.json();

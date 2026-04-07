@@ -12,9 +12,8 @@
 
 import { useState, useMemo } from "react";
 import AdminLayout from "@/components/AdminLayout";
-import { supabase } from "@/integrations/supabase/client";
-import { useQueryClient } from "@tanstack/react-query";
-import { useSubscribers, useNotifications as useNotificationsHook, useNotificationTemplates } from "@/hooks/useDatabase";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSubscribers } from "@/hooks/useDatabase";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,8 +31,31 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-const useNotifications = useNotificationsHook;
-const useTemplates = useNotificationTemplates;
+// ── Data fetching ─────────────────────────────────────────────────────────────
+
+const useNotifications = (since?: string) => useQuery({
+  queryKey: ["notifications", since ?? "all"],
+  queryFn: async () => {
+    const url = since
+      ? `/api/admin/data/notifications?since=${encodeURIComponent(since)}`
+      : `/api/admin/data/notifications`;
+    const res = await fetch(url, {
+      });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+  refetchInterval: 30000,
+});
+
+const useTemplates = () => useQuery({
+  queryKey: ["notification_templates"],
+  queryFn: async () => {
+    const res = await fetch(`/api/admin/data/notification-templates`, {
+      });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+});
 
 // ── Static maps ───────────────────────────────────────────────────────────────
 
@@ -134,16 +156,16 @@ const RateCard = ({ label, sent, failed, pending, icon: Icon, iconClass }: RateC
 const NotificationsPage = () => {
   const [statRange, setStatRange] = useState<"7d" | "30d" | "all">("7d");
 
-  const { data: allNotifs = [], refetch: refetchAll } = useNotifications();
-  const refetchStats = refetchAll;
-  const statNotifs = useMemo(() => {
-    if (statRange === "all") return allNotifs;
-    const days = statRange === "7d" ? 7 : 30;
-    const cutoff = new Date(Date.now() - days * 86400_000).toISOString();
-    return (allNotifs as any[]).filter((n: any) => n.created_at >= cutoff);
-  }, [allNotifs, statRange]);
-  const { data: templates = [] } = useTemplates();
-  const { data: subscribers = [] } = useSubscribers();
+  const since7d  = new Date(Date.now() -  7 * 86400_000).toISOString();
+  const since30d = new Date(Date.now() - 30 * 86400_000).toISOString();
+  const sinceStat = statRange === "7d" ? since7d : statRange === "30d" ? since30d : undefined;
+
+  // Stats query uses the range filter; history table always loads latest 500
+  const { data: statNotifs = [], refetch: refetchStats } = useNotifications(sinceStat);
+  const { data: allNotifs  = [], refetch: refetchAll   } = useNotifications();
+  const { data: templates  = [] } = useTemplates();
+  const { data: subsResult = null } = useSubscribers();
+  const subscribers = (subsResult as any)?.data ?? (Array.isArray(subsResult) ? subsResult : []);
   const queryClient = useQueryClient();
   const { toast }   = useToast();
 
@@ -192,13 +214,32 @@ const NotificationsPage = () => {
     }
     setSending(true);
     try {
-      const { error } = await supabase.from("notifications").insert({
-        type: "broadcast" as any, title: broadcast.title, message: broadcast.message,
-        channel: broadcast.channel as any, target: broadcast.target as any,
-        status: "pending" as any, sent_at: new Date().toISOString(),
+      const notifAPI = "";
+      const notifRes = await fetch(`${notifAPI}/api/admin/data/notifications`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "broadcast", title: broadcast.title, message: broadcast.message,
+          channel: broadcast.channel, target: broadcast.target,
+          status: "pending", sent_at: new Date().toISOString(),
+        }),
       });
-      if (error) throw error;
-      toast({ title: "Broadcast Queued" });
+      if (!notifRes.ok) throw new Error(`HTTP ${notifRes.status}`);
+      // BUG-P3-CRIT-09 FIX: Previously .catch(() => {}) swallowed all errors and showed
+      // "Broadcast Queued" even when the backend call failed. Now errors are surfaced.
+      /api");
+      ?? "";
+      const bcastRes = await fetch(`/admin/notifications/broadcast`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(broadcast),
+      });
+      if (!bcastRes.ok) {
+        const bcastData = await bcastRes.json().catch(() => ({}));
+        throw new Error(bcastData.error ?? `Broadcast failed (${bcastRes.status})`);
+      }
+      const bcastData = await bcastRes.json();
+      toast({ title: "Broadcast Queued", description: `Queued for ${bcastData.queued ?? "?"} subscriber(s)` });
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
       setBroadcastOpen(false);
       setBroadcast({ title: "", message: "", channel: "both", target: "all" });
@@ -216,10 +257,13 @@ const NotificationsPage = () => {
     setSavingTpl(true);
     try {
       if (editTplId) {
-        const { error } = await supabase.from("notification_templates").update({
-          title: tplForm.title, body: tplForm.body, type: tplForm.channel ?? "sms",
-        }).eq("id", editTplId);
-        if (error) throw error;
+        const tplAPI = "";
+        const tplRes = await fetch(`${tplAPI}/api/admin/data/notification-templates/${editTplId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: tplForm.title, body: tplForm.body, channel: tplForm.channel, enabled: tplForm.enabled }),
+        });
+        if (!tplRes.ok) throw new Error(`HTTP ${tplRes.status}`);
         toast({ title: "Template Updated" });
       }
       queryClient.invalidateQueries({ queryKey: ["notification_templates"] });

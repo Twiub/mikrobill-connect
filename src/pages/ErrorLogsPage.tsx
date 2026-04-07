@@ -20,8 +20,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search, CheckCircle, AlertTriangle, XCircle, Info, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { getToken } from "@/lib/authClient";
-
 const levelIcons: Record<string, React.ReactNode> = {
   error: <XCircle className="h-4 w-4 text-destructive" />,
   warn:  <AlertTriangle className="h-4 w-4 text-warning" />,
@@ -49,13 +47,12 @@ const ErrorLogsPage = () => {
   const { toast } = useToast();
   const [resolving, setResolving] = useState<string | null>(null);
 
-  const apiBase = () => (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+  .__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
   // BUG-P3-CRIT-08 FIX: Export CSV — calls GET /api/admin/error-logs/export
   const handleExportCsv = async () => {
     try {
-      const res = await fetch(`${apiBase()}/admin/error-logs/export`, {
-        headers: { Authorization: `Bearer ${await getToken()}` },
-      });
+      const res = await fetch(`/admin/error-logs/export`, {
+        });
       if (!res.ok) throw new Error(`Export failed (${res.status})`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -73,10 +70,9 @@ const ErrorLogsPage = () => {
   const handleResolve = async (log: any) => {
     setResolving(log.id);
     try {
-      const res = await fetch(`${apiBase()}/admin/error-logs/${log.id}/resolve`, {
+      const res = await fetch(`/admin/error-logs/${log.id}/resolve`, {
         method: "PATCH",
-        headers: { Authorization: `Bearer ${await getToken()}` },
-      });
+        });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to resolve");
       toast({ title: "Resolved", description: "Log entry marked as resolved." });

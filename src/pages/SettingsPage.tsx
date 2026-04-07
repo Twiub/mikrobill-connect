@@ -7,14 +7,10 @@
  *   1. M-Pesa Daraja API        — mpesa_config table (existing)
  *   2. RADIUS & Network         — system_settings (radius_server_ip, radius_secret, radius_host)
  *   3. Captive Portal / UAM     — system_settings (portal_uam_url, portal_uam_secret)
- *   4. MeshDesk Timing          — system_settings (meshdesk_*, stale_action_timeout_secs)
- *   5. Maps & Location          — system_settings (google_maps_api_key)
  *   6. SMS Notifications        — system_settings (sms_provider, sms_*, android_gw_*)
  *                                 Provider selector: Africa's Talking | Android SMS Gateway | Auto
  *                                 Android GW: Username, Password, Device ID (server is fixed)
- *   7. Free WhatsApp Chat       — system_settings (free_whatsapp_*) [added v3.17.0]
  *   8. Push Notifications (FCM) — system_settings (fcm_*)
- *   9. DLNA Media Server        — system_settings (dlna_*)
  *  10. Tax & Compliance         — system_settings (tax_*)
  *
  * v3.16.0: SMS section replaced with provider-aware UI (AT + Android SMS Gateway)
@@ -22,7 +18,6 @@
 
 import { useState, useEffect } from "react";
 import AdminLayout from "@/components/AdminLayout";
-import { getToken } from "@/lib/authClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,18 +28,17 @@ import { Badge } from "@/components/ui/badge";
 import {
   Wifi, Server, Globe, Bell, Save, Eye, EyeOff,
   Loader2, RefreshCw, CheckCircle, AlertCircle, Map,
-  Smartphone, Tv2, Receipt, Clock, ChevronDown, ChevronUp, Router,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useBranding } from "@/hooks/useBranding";
 
-const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+/api");
 
 async function adminApi(method: string, path: string, body?: object) {
-  const token = localStorage.getItem("auth_token") ?? sessionStorage.getItem("auth_token");
+  ?? ""; // FIX: use canonical mb_auth_token via authClient
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
   return res.json();
@@ -169,11 +163,8 @@ const SettingsPage = () => {
   const [radius, setRadius] = useState({ radius_server_ip: "127.0.0.1", radius_secret: "", radius_host: "127.0.0.1" });
   const [uam,    setUam]    = useState({ portal_uam_url: "", portal_uam_secret: "greatsecret" });
   const [mesh,   setMesh]   = useState({
-    meshdesk_dead_after: "600", meshdesk_report_proto: "http",
-    meshdesk_report_light: "120", meshdesk_report_full: "300",
-    meshdesk_report_sampling: "0", stale_action_timeout_secs: "300",
   });
-  const [maps,   setMaps]   = useState({ google_maps_api_key: "" });
+  const [maps,   setMaps]   = useState({
   const [sms,    setSms]    = useState({
     sms_provider: "africastalking",
     sms_provider_fallback: "none",
@@ -181,17 +172,8 @@ const SettingsPage = () => {
     android_gw_username: "", android_gw_password: "", android_gw_device_id: "", android_gw_webhook_secret: "",
   });
   const [fcm,    setFcm]    = useState({ fcm_server_key: "", fcm_project_id: "" });
-  const [dlna,   setDlna]   = useState({ dlna_enabled: "true", dlna_server_ip: "192.168.88.200", dlna_http_port: "8200" });
+  const [dlna,   setDlna]   = useState({
   const [tax,    setTax]    = useState({ tax_vat_rate: "16", tax_kra_pin: "" });
-  // v3.17.0: Free WhatsApp Chat
-  const [fwa, setFwa] = useState({
-    free_whatsapp_enabled: "true",
-    free_whatsapp_window_days: "3",
-    free_whatsapp_daily_cap_mb: "100",
-    free_whatsapp_speed_down: "1M",
-    free_whatsapp_speed_up: "512k",
-    free_whatsapp_extend_days: "3",
-    free_whatsapp_otp_ttl_seconds: "300",
   });
 
   // ── Load ──────────────────────────────────────────────────────────────────
@@ -224,14 +206,8 @@ const SettingsPage = () => {
         setRadius({ radius_server_ip: s.radius_server_ip ?? "127.0.0.1", radius_secret: s.radius_secret ?? "", radius_host: s.radius_host ?? "127.0.0.1" });
         setUam({ portal_uam_url: s.portal_uam_url ?? "", portal_uam_secret: s.portal_uam_secret ?? "greatsecret" });
         setMesh({
-          meshdesk_dead_after:       s.meshdesk_dead_after       ?? "600",
-          meshdesk_report_proto:     s.meshdesk_report_proto     ?? "http",
-          meshdesk_report_light:     s.meshdesk_report_light     ?? "120",
-          meshdesk_report_full:      s.meshdesk_report_full      ?? "300",
-          meshdesk_report_sampling:  s.meshdesk_report_sampling  ?? "0",
-          stale_action_timeout_secs: s.stale_action_timeout_secs ?? "300",
         });
-        setMaps({ google_maps_api_key: s.google_maps_api_key ?? "" });
+        setMaps({
         setSms({
           sms_provider:             s.sms_provider             ?? "africastalking",
           sms_provider_fallback:    s.sms_provider_fallback    ?? "none",
@@ -244,16 +220,9 @@ const SettingsPage = () => {
           android_gw_webhook_secret: s.android_gw_webhook_secret ?? "",
         });
         setFcm({ fcm_server_key: s.fcm_server_key ?? "", fcm_project_id: s.fcm_project_id ?? "" });
-        setDlna({ dlna_enabled: s.dlna_enabled ?? "true", dlna_server_ip: s.dlna_server_ip ?? "192.168.88.200", dlna_http_port: s.dlna_http_port ?? "8200" });
+        setDlna({
         setTax({ tax_vat_rate: s.tax_vat_rate ?? "16", tax_kra_pin: s.tax_kra_pin ?? "" });
         setFwa({
-          free_whatsapp_enabled:        s.free_whatsapp_enabled        ?? "true",
-          free_whatsapp_window_days:    s.free_whatsapp_window_days    ?? "3",
-          free_whatsapp_daily_cap_mb:   s.free_whatsapp_daily_cap_mb   ?? "100",
-          free_whatsapp_speed_down:     s.free_whatsapp_speed_down     ?? "1M",
-          free_whatsapp_speed_up:       s.free_whatsapp_speed_up       ?? "512k",
-          free_whatsapp_extend_days:    s.free_whatsapp_extend_days    ?? "3",
-          free_whatsapp_otp_ttl_seconds: s.free_whatsapp_otp_ttl_seconds ?? "300",
         });
       })
       .catch(() => toast({ title: "Failed to load settings", variant: "destructive" }))
@@ -294,9 +263,9 @@ const SettingsPage = () => {
     }
     setTesting(true); setTestResult(null);
     try {
-      const resp = await fetch(`${API}/admin/mpesa/test`, {
+      const resp = await fetch(`/admin/mpesa/test`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken() ?? ""}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ consumer_key: mpesa.consumer_key, consumer_secret: mpesa.consumer_secret, environment: mpesa.environment }),
       });
       const r = await resp.json();
@@ -389,7 +358,7 @@ const SettingsPage = () => {
         <Section icon={<Router className="h-5 w-5 text-primary" />} title="RADIUS & Network">
           <div className="space-y-4">
             <InfoBox>
-              These values are embedded in every MeshDesk/APdesk node config response.{" "}
+              These values configure the captive portal UAM behaviour.{" "}
               <strong className="text-foreground">radius_server_ip</strong> is the IP the AP sends
               Access-Request packets to — it must be reachable from the AP.
               Change from defaults immediately on production deployments.
@@ -426,78 +395,6 @@ const SettingsPage = () => {
               </Field>
             </div>
             <SaveRow section="Captive Portal" saving={sv("Captive Portal")} sysLoading={sysLoading} onSave={() => saveSys("Captive Portal", uam)} />
-          </div>
-        </Section>
-
-        {/* ── 4. MeshDesk Timing & Protocol ────────────────────────────── */}
-        <Section icon={<Clock className="h-5 w-5 text-warning" />} title="MeshDesk — Node Timing & Reporting" defaultOpen={false}>
-          <div className="space-y-4">
-            <div className="glass-card p-3 bg-warning/5 border-warning/15 text-[11px] text-muted-foreground">
-              Controls how frequently nodes check in and how quickly they are marked offline.
-              Changes take effect on the <strong className="text-foreground">next heartbeat</strong> — no reboot required.
-              Reduce intervals for real-time monitoring; increase on metered or low-bandwidth backhauls.
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <Field label="Report Protocol" hint="Protocol nodes use to contact MikroBill. Use http for LAN/self-signed setups; https when SSL termination is in place.">
-                <Select value={mesh.meshdesk_report_proto} onValueChange={v => setMesh(p => ({ ...p, meshdesk_report_proto: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="http">HTTP</SelectItem>
-                    <SelectItem value="https">HTTPS</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Dead After (seconds)" hint="Seconds without a heartbeat before a node is marked offline. Default 600. Reduce to 180–300 for faster fault detection.">
-                <Input type="number" min={60} max={3600} value={mesh.meshdesk_dead_after} onChange={e => setMesh(p => ({ ...p, meshdesk_dead_after: e.target.value }))} />
-              </Field>
-              <Field label="Stale Action Timeout (seconds)" hint="Seconds before an unacknowledged command (e.g. reboot) is retried. Default 300.">
-                <Input type="number" min={30} max={3600} value={mesh.stale_action_timeout_secs} onChange={e => setMesh(p => ({ ...p, stale_action_timeout_secs: e.target.value }))} />
-              </Field>
-              <Field label="Light Report Interval (seconds)" hint="Frequency of brief heartbeats (load + uptime only). Default 120. Safe to reduce to 60 on stable backhauls.">
-                <Input type="number" min={30} max={900} value={mesh.meshdesk_report_light} onChange={e => setMesh(p => ({ ...p, meshdesk_report_light: e.target.value }))} />
-              </Field>
-              <Field label="Full Report Interval (seconds)" hint="Frequency of full stats (stations, neighbors, network). Default 300. Keep high on metered links.">
-                <Input type="number" min={60} max={3600} value={mesh.meshdesk_report_full} onChange={e => setMesh(p => ({ ...p, meshdesk_report_full: e.target.value }))} />
-              </Field>
-              <Field label="Station Sampling Interval (seconds)" hint="How often nodes report connected client details. Set 0 to disable. Useful for subscriber location tracking.">
-                <Input type="number" min={0} max={3600} value={mesh.meshdesk_report_sampling} onChange={e => setMesh(p => ({ ...p, meshdesk_report_sampling: e.target.value }))} />
-              </Field>
-            </div>
-            <SaveRow section="MeshDesk" saving={sv("MeshDesk")} sysLoading={sysLoading} onSave={() => saveSys("MeshDesk", mesh)} />
-          </div>
-        </Section>
-
-        {/* ── 5. Maps & Location ────────────────────────────────────────── */}
-        <Section icon={<Map className="h-5 w-5 text-info" />} title="Maps & Location" defaultOpen={false}>
-          <div className="space-y-4">
-            <InfoBox>
-              The Mesh Node Planner uses <strong className="text-foreground">OpenStreetMap</strong> by default (free, no key).
-              Enter a Google Maps API key here to unlock <strong className="text-foreground">Road</strong> and{" "}
-              <strong className="text-foreground">Satellite</strong> tile layers in the planner toolbar.
-              The key is shared across all admin sessions — set it once.
-            </InfoBox>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field
-                label="Google Maps API Key (optional)"
-                hint="Google Cloud Console → APIs & Services → Credentials → Create API Key → enable Maps JavaScript API. Restrict by HTTP Referrer to your admin domain. Free tier: 10,000 map loads/month."
-              >
-                <SecretInput
-                  value={maps.google_maps_api_key}
-                  onChange={v => setMaps({ google_maps_api_key: v })}
-                  placeholder="AIzaSy…"
-                  showKey={show.maps_key}
-                  onToggle={tog("maps_key")}
-                />
-              </Field>
-              <div className="glass-card p-3 text-[11px] text-muted-foreground">
-                <p className="font-semibold text-foreground mb-1.5">Tile layers unlocked in Mesh Planner:</p>
-                <p><strong className="text-foreground">OSM</strong> — always available, free, no key required</p>
-                <p><strong className="text-foreground">Road</strong> — Google street map with clear building labels</p>
-                <p><strong className="text-foreground">Satellite</strong> — aerial view to see rooftops &amp; masts before visiting</p>
-                <p className="mt-1.5 text-[10px]">Leave blank to use OSM only. No charges incurred.</p>
-              </div>
-            </div>
-            <SaveRow section="Maps" saving={sv("Maps")} sysLoading={sysLoading} onSave={() => saveSys("Maps", maps)} />
           </div>
         </Section>
 
@@ -615,13 +512,13 @@ const SettingsPage = () => {
                     <Input
                       className="font-mono text-xs bg-background"
                       readOnly
-                      value={`${(window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "https://your-domain.com/api")}/webhooks/android-gateway`}
+                      value={`${""}/webhooks/android-gateway`}
                     />
                     <button
                       type="button"
                       className="shrink-0 text-xs text-primary hover:underline"
                       onClick={() => {
-                        const url = `${(window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "")}/webhooks/android-gateway`;
+                        const url = `${""}/webhooks/android-gateway`;
                         navigator.clipboard.writeText(url).then(() => toast({ title: "Webhook URL copied ✅" }));
                       }}
                     >
@@ -640,91 +537,6 @@ const SettingsPage = () => {
           </div>
         </Section>
 
-        {/* ── 7. Free WhatsApp Chat (v3.17.0) ──────────────────────────── */}
-        <Section
-          icon={<span className="text-lg">💬</span>}
-          title="Free WhatsApp Chat"
-          badge={fwa.free_whatsapp_enabled === "true" ? "Enabled" : "Disabled"}
-          defaultOpen={false}
-        >
-          <div className="space-y-4">
-            <p className="text-xs text-muted-foreground">
-              Grants unregistered hotspot visitors limited free access to WhatsApp (text &amp; voice notes only).
-              Acts as a conversion engine — the package purchase screen is always visible while free access works in the background.
-            </p>
-
-            <Field label="Enable Free WhatsApp Chat" hint="Master switch. When disabled, the option is hidden from the hotspot portal entirely.">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setFwa(p => ({ ...p, free_whatsapp_enabled: p.free_whatsapp_enabled === "true" ? "false" : "true" }))}
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${fwa.free_whatsapp_enabled === "true" ? "bg-primary" : "bg-muted"}`}
-                >
-                  <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transition-transform ${fwa.free_whatsapp_enabled === "true" ? "translate-x-5" : "translate-x-0"}`} />
-                </button>
-                <span className="text-sm text-muted-foreground">{fwa.free_whatsapp_enabled === "true" ? "Enabled" : "Disabled"}</span>
-              </div>
-            </Field>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field label="Free Window Duration (days)" hint="How many days the free window lasts. After it expires the user must register again or buy a package. Range: 1–30.">
-                <Input
-                  type="number" min="1" max="30"
-                  value={fwa.free_whatsapp_window_days}
-                  onChange={e => setFwa(p => ({ ...p, free_whatsapp_window_days: e.target.value }))}
-                />
-              </Field>
-              <Field label="Daily Data Cap (MB)" hint="Maximum data per day for free tier users. Resets at midnight. At 70% usage a nudge SMS is sent.">
-                <Input
-                  type="number" min="10" max="1000"
-                  value={fwa.free_whatsapp_daily_cap_mb}
-                  onChange={e => setFwa(p => ({ ...p, free_whatsapp_daily_cap_mb: e.target.value }))}
-                />
-              </Field>
-              <Field label="Download Speed Limit" hint="MikroTik rate limit string for free tier download. E.g. 1M, 512k, 2M.">
-                <Input
-                  placeholder="1M"
-                  value={fwa.free_whatsapp_speed_down}
-                  onChange={e => setFwa(p => ({ ...p, free_whatsapp_speed_down: e.target.value }))}
-                />
-              </Field>
-              <Field label="Upload Speed Limit" hint="MikroTik rate limit string for free tier upload. E.g. 512k, 256k, 1M.">
-                <Input
-                  placeholder="512k"
-                  value={fwa.free_whatsapp_speed_up}
-                  onChange={e => setFwa(p => ({ ...p, free_whatsapp_speed_up: e.target.value }))}
-                />
-              </Field>
-              <Field label="Extension on Purchase (days)" hint="Days added to a user's free window when they buy any package. Rewards conversion.">
-                <Input
-                  type="number" min="0" max="30"
-                  value={fwa.free_whatsapp_extend_days}
-                  onChange={e => setFwa(p => ({ ...p, free_whatsapp_extend_days: e.target.value }))}
-                />
-              </Field>
-              <Field label="OTP Validity (seconds)" hint="How long the verification code is valid. Default 300 = 5 minutes.">
-                <Input
-                  type="number" min="60" max="900"
-                  value={fwa.free_whatsapp_otp_ttl_seconds}
-                  onChange={e => setFwa(p => ({ ...p, free_whatsapp_otp_ttl_seconds: e.target.value }))}
-                />
-              </Field>
-            </div>
-
-            <div className="rounded-lg bg-muted/40 border border-border p-3 text-xs text-muted-foreground space-y-1">
-              <p className="font-semibold text-foreground">MikroTik Walled Garden required</p>
-              <p>Add the following to your MikroTik hotspot walled garden so WhatsApp domains are accessible before payment:</p>
-              <code className="block font-mono text-[10px] bg-background rounded p-2 mt-1 whitespace-pre">
-{`*.whatsapp.com   *.whatsapp.net
-web.whatsapp.com *.wa.me
-*.fna.whatsapp.net`}
-              </code>
-              <p className="mt-1">Do <strong>not</strong> add mmg.whatsapp.net or *.fbcdn.net — these are photo/video CDNs excluded from the free tier.</p>
-            </div>
-
-            <SaveRow section="FWA" saving={sv("FWA")} sysLoading={sysLoading} onSave={() => saveSys("FWA", fwa)} />
-          </div>
-        </Section>
-
         {/* ── 8. FCM ────────────────────────────────────────────────────── */}
         <Section icon={<Bell className="h-5 w-5 text-chart-3" />} title="Push Notifications — Firebase (FCM)" defaultOpen={false}>
           <div className="space-y-4">
@@ -737,36 +549,6 @@ web.whatsapp.com *.wa.me
               </Field>
             </div>
             <SaveRow section="FCM" saving={sv("FCM")} sysLoading={sysLoading} onSave={() => saveSys("FCM", fcm)} />
-          </div>
-        </Section>
-
-        {/* ── 8. DLNA ───────────────────────────────────────────────────── */}
-        <Section
-          icon={<Tv2 className="h-5 w-5 text-primary" />}
-          title="DLNA Media Server"
-          defaultOpen={false}
-          badge={dlna.dlna_enabled === "true" ? "Enabled" : "Disabled"}
-          badgeVariant={dlna.dlna_enabled === "true" ? "success" : "outline"}
-        >
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <Field label="Enable DLNA Access Control" hint="Only active subscribers can access Universal Media Server. The dlna-allowed address-list on MikroTik is refreshed every 10 minutes. Per-router overrides can be set in Routers → Edit → DLNA tab.">
-                <div className="flex items-center gap-3 h-10">
-                  <Switch
-                    checked={dlna.dlna_enabled === "true"}
-                    onCheckedChange={v => setDlna(p => ({ ...p, dlna_enabled: v ? "true" : "false" }))}
-                  />
-                  <span className="text-sm text-muted-foreground">{dlna.dlna_enabled === "true" ? "On" : "Off"}</span>
-                </div>
-              </Field>
-              <Field label="UMS Server IP (Global / Fallback)" hint="Default UMS LAN IP used when a router has no per-router DLNA IP set. For multi-subnet deployments, set a per-router IP in Routers → Edit → DLNA tab instead.">
-                <Input className="font-mono" placeholder="192.168.88.200" value={dlna.dlna_server_ip} onChange={e => setDlna(p => ({ ...p, dlna_server_ip: e.target.value }))} />
-              </Field>
-              <Field label="UMS HTTP Streaming Port" hint="Port UMS listens on for HTTP streaming (default 8200). Re-download the router setup script after changing this.">
-                <Input type="number" placeholder="8200" value={dlna.dlna_http_port} onChange={e => setDlna(p => ({ ...p, dlna_http_port: e.target.value }))} />
-              </Field>
-            </div>
-            <SaveRow section="DLNA" saving={sv("DLNA")} sysLoading={sysLoading} onSave={() => saveSys("DLNA", dlna)} />
           </div>
         </Section>
 

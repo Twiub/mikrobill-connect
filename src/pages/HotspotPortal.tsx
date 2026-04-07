@@ -151,16 +151,8 @@ interface Subscriber {
   phone: string;
   status: string;
   package_id: string | null;
-  [key: string]: any;
   expires_at: string | null;
   packages?: { name: string } | null;
-  package_name?: string | null;
-  speed_down?: string | number | null;
-  speed_up?: string | number | null;
-  max_devices?: number | null;
-  duration_days?: number | null;
-  data_cap_gb?: number | null;
-  router_id?: string | null;
 }
 
 // ── PWA-UX-01 FIX: Device type detection from User-Agent ────────────────────────
@@ -247,9 +239,8 @@ function PortalDashboard({
     if (!portalToken) return;
     setLoading(true);
     try {
-      const res = await fetch(`${apiBase}/portal/devices`, {
-        headers: { Authorization: `Bearer ${portalToken}` },
-      });
+      const res = await fetch(`/portal/devices`, {
+        });
       if (!res.ok) return;
       const data = await res.json();
       setDevices(data.devices || []);
@@ -261,9 +252,9 @@ function PortalDashboard({
         if (!myDevice) {
           // Current MAC not in this subscriber's device list — might be on someone else's plan
           // Check via a quick API call
-          fetch(`${apiBase}/portal/devices/where-am-i`, {
+          fetch(`/portal/devices/where-am-i`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${portalToken}` },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ mac: currentMac }),
           }).then(r => r.json()).then(d => {
             if (d.success && d.onSharedPlan) {
@@ -288,9 +279,9 @@ function PortalDashboard({
     if (!currentMac || !portalToken) return;
     setBusyMac(currentMac);
     try {
-      const res = await fetch(`${apiBase}/portal/devices/leave-shared`, {
+      const res = await fetch(`/portal/devices/leave-shared`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${portalToken}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mac: currentMac }),
       });
       const data = await res.json();
@@ -311,9 +302,9 @@ function PortalDashboard({
     setBusyMac("reclaim");
     try {
       const ownerMacs = ownerDevices.map((d: any) => d.mac_address).filter(Boolean);
-      const res = await fetch(`${apiBase}/portal/devices/reclaim`, {
+      const res = await fetch(`/portal/devices/reclaim`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${portalToken}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ownerMacs }),
       });
       const data = await res.json();
@@ -332,9 +323,9 @@ function PortalDashboard({
     if (!portalToken) return;
     setBusyMac(mac);
     try {
-      const res = await fetch(`${apiBase}/portal/devices/evict-guest`, {
+      const res = await fetch(`/portal/devices/evict-guest`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${portalToken}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mac }),
       });
       const data = await res.json();
@@ -538,6 +529,7 @@ const HotspotPortal = () => {
   // instead of an infinite spinner (users on slow M-Pesa wait up to 90s — they
   // need feedback that the system is still working, not frozen)
   const [pollCount, setPollCount] = useState(0);
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false); // FIX: prevent double STK push
   const [autoConnectStatus, setAutoConnectStatus] = useState("");
   // BUG-PWA-02 FIX: Track WHY auth failed so package page shows correct context
   const [authFailReason, setAuthFailReason] = useState<AuthFailReason>(null);
@@ -638,7 +630,7 @@ const HotspotPortal = () => {
           ? AbortSignal.timeout(90_000)
           : undefined;
 
-        const macRes = await fetchWithBackoff(`${apiBase}/portal/mac-auth`, {
+        const macRes = await fetchWithBackoff(`/portal/mac-auth`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mac }),
@@ -656,12 +648,9 @@ const HotspotPortal = () => {
             if (!existingToken) {
               const portalCookie = getCookie(COOKIE_KEY);
               if (portalCookie) {
-                fetch(`${apiBase}/portal/issue-device-token`, {
+                fetch(`/portal/issue-device-token`, {
                   method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${portalCookie}`,
-                  },
+                  headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ mac, deviceType: inferDeviceTypeFromUA() }),
                 }).then(r => r.json()).then(d => {
                   if (d.success && d.token) {
@@ -724,7 +713,7 @@ const HotspotPortal = () => {
 
         // GAP-2 FIX: Same 429 thundering-herd protection as Layer 1.
         // fetchWithBackoff is defined inside attemptAutoReconnect so it's in scope here.
-        const tokenRes = await fetch(`${apiBase}/portal/device-token-auth`, {
+        const tokenRes = await fetchWithBackoff(`/portal/device-token-auth`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token: storedToken, mac: mac || undefined }),
@@ -779,7 +768,7 @@ const HotspotPortal = () => {
       // device has an active Free WhatsApp session and reconnect automatically.
       if (storedToken) {
         try {
-          const fwaRes = await fetch(`${apiBase}/portal/fwa/status`, {
+          const fwaRes = await fetch(`/portal/fwa/status`, {
             // FWA-01 FIX: was { "Authorization": storedToken } — missing "Bearer " prefix
             // caused resolveToken() to hash the raw token correctly but backend
             // strip logic always expects the standard scheme for consistency.
@@ -791,7 +780,7 @@ const HotspotPortal = () => {
               setFwaStatus(fwaData as FwaStatus);
               // Attempt seamless rejoin (re-issue MikroTik OTP)
               try {
-                const rejoinRes = await fetch(`${apiBase}/portal/fwa/rejoin`, {
+                const rejoinRes = await fetch(`/portal/fwa/rejoin`, {
                   method: "POST",
                   // FWA-01 FIX: was { "Authorization": storedToken } — missing "Bearer " prefix
                   headers: { "Authorization": `Bearer ${storedToken}` },
@@ -862,9 +851,8 @@ const HotspotPortal = () => {
         const portalToken = getCookie(COOKIE_KEY);
         if (!portalToken) return;
         try {
-          const res = await fetch(`${apiBase}/portal/status`, {
-            headers: { Authorization: `Bearer ${portalToken}` },
-          });
+          const res = await fetch(`/portal/status`, {
+            });
           if (res.status === 401) {
             // Session expired or invalidated
             setSubscriptionExpired(true);
@@ -910,8 +898,8 @@ const HotspotPortal = () => {
     const init = async () => {
       // Load packages + FWA settings in parallel (both are public, no auth needed)
       const [pkgRes, fwaRes] = await Promise.allSettled([
-        fetch(`${apiBase}/portal/packages`).then(r => r.json()),
-        fetch(`${apiBase}/portal/fwa-settings`).then(r => r.json()),
+        fetch(`/portal/packages`).then(r => r.json()),
+        fetch(`/portal/fwa-settings`).then(r => r.json()),
       ]);
 
       let loadedPackages: Package[] = [];
@@ -941,9 +929,8 @@ const HotspotPortal = () => {
       const portalToken = getCookie(COOKIE_KEY);
       if (portalToken) {
         try {
-          const statusRes = await fetch(`${apiBase}/portal/status`, {
-            headers: { Authorization: `Bearer ${portalToken}` },
-          });
+          const statusRes = await fetch(`/portal/status`, {
+            });
           if (statusRes.ok) {
             const statusData = await statusRes.json();
             if (statusData?.subscriber) {
@@ -963,7 +950,7 @@ const HotspotPortal = () => {
               // Auto-claim deferred sharing invite if present
               const joinCookieId = getCookie("mikrobill_join_cookie");
               if (joinCookieId && params.mac) {
-                fetch(`${apiBase}/portal/sharing/claim-deferred`, {
+                fetch(`/portal/sharing/claim-deferred`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ cookieId: joinCookieId, mac: params.mac }),
@@ -997,7 +984,7 @@ const HotspotPortal = () => {
           setStep("auto-connecting");
           setAutoConnectStatus("Identifying your device…");
 
-          const detectRes = await fetch(`${apiBase}/portal/detect-client`, { cache: "no-store" });
+          const detectRes = await fetch(`/portal/detect-client`, { cache: "no-store" });
           if (detectRes.ok) {
             const detectData = await detectRes.json();
             if (detectData.success && detectData.mac) {
@@ -1057,12 +1044,9 @@ const HotspotPortal = () => {
 
     // Issue a persistent device token for future reconnects
     try {
-      const tokenRes = await fetch(`${apiBase}/portal/issue-device-token`, {
+      const tokenRes = await fetch(`/portal/issue-device-token`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${portalToken}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mac: params.mac, deviceType: inferDeviceTypeFromUA() }), // PWA-UX-01 FIX
       });
       if (tokenRes.ok) {
@@ -1081,7 +1065,7 @@ const HotspotPortal = () => {
       const storedToken = localStorage.getItem(DEVICE_TOKEN_KEY) || getCookie(DEVICE_TOKEN_KEY);
       if (storedToken) {
         try {
-          const authRes = await fetch(`${apiBase}/portal/device-token-auth`, {
+          const authRes = await fetch(`/portal/device-token-auth`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ token: storedToken, mac: params.mac }),
@@ -1108,7 +1092,8 @@ const HotspotPortal = () => {
 
   // ── Payment / purchase handler ─────────────────────────────────────────────
   const handlePurchase = async () => {
-    if (!selectedPkg || !phone || phone.length < 9) return;
+    if (!selectedPkg || !phone || phone.length < 9 || isSubmittingPayment) return; // FIX: idempotency guard
+    setIsSubmittingPayment(true);
     setStep("processing");
     setPollCount(0);
 
@@ -1128,9 +1113,8 @@ const HotspotPortal = () => {
       // Fetch subscriber ID from portal session
       let subscriberId: string | null = null;
       if (portalToken) {
-        const statusRes = await fetch(`${apiBase}/portal/status`, {
-          headers: { Authorization: `Bearer ${portalToken}` },
-        });
+        const statusRes = await fetch(`/portal/status`, {
+          });
         if (statusRes.ok) {
           const statusData = await statusRes.json();
           subscriberId = statusData.subscriber?.id ?? null;
@@ -1150,7 +1134,7 @@ const HotspotPortal = () => {
         // Store raw token now so callback result can auto-reconnect this device
         localStorage.setItem(DEVICE_TOKEN_KEY, anonRawToken);
         setCookie(DEVICE_TOKEN_KEY, anonRawToken, COOKIE_DAYS);
-        const anonRes = await fetch(`${apiBase}/mpesa/stk-push-anonymous`, {
+        const anonRes = await fetch(`/mpesa/stk-push-anonymous`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ phone: formattedPhone, packageId: selectedPkg.id, deviceTokenHash: anonTokenHash }),
@@ -1165,13 +1149,13 @@ const HotspotPortal = () => {
         const anonCheckoutId = anonData.checkoutRequestId;
         let anonConfirmed = false;
         let anonActivated = false;
-        for (let i = 0; i < 24; i++) {
+        for (let i = 0; i < 36; i++) { // FIX: 180s timeout (was 120s) for Safaricom peak delays
           await new Promise(r => setTimeout(r, 5000));
           setPollCount(i + 1);
           try {
             // GAP-02 FIX: status-anonymous route now exists and runs inline activation
             // when Daraja confirms payment but callback never arrived.
-            const aPollRes  = await fetch(`${apiBase}/mpesa/status-anonymous/${anonCheckoutId}?dth=${anonTokenHash}`);
+            const aPollRes  = await fetch(`/mpesa/status-anonymous/${anonCheckoutId}?dth=${anonTokenHash}`);
             const aPollData = await aPollRes.json();
             if (aPollData.status === "success") {
               anonConfirmed = true;
@@ -1194,7 +1178,7 @@ const HotspotPortal = () => {
         // Auto-reconnect via device token (callback or inline activation bound it to new subscriber)
         const { linkLogin, linkOrig, mac } = hotspotParams.current;
         if (linkLogin) {
-          const reconnectRes = await fetch(`${apiBase}/portal/device-token-auth`, {
+          const reconnectRes = await fetch(`/portal/device-token-auth`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ token: anonRawToken, mac }),
@@ -1211,12 +1195,9 @@ const HotspotPortal = () => {
       }
 
       // Initiate M-Pesa STK Push
-      const pushRes = await fetch(`${apiBase}/mpesa/stk-push`, {
+      const pushRes = await fetch(`/mpesa/stk-push`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${portalToken}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: formattedPhone, amount: selectedPkg.price, packageId: selectedPkg.id, subscriberId }),
       });
       const pushData = await pushRes.json();
@@ -1231,13 +1212,12 @@ const HotspotPortal = () => {
       const checkoutId = pushData.checkoutRequestId;
       let confirmed  = false;
       let activated  = false;
-      for (let i = 0; i < 24; i++) {
+      for (let i = 0; i < 36; i++) { // FIX: 180s timeout (was 120s) for Safaricom peak delays
         await new Promise(r => setTimeout(r, 5000));
         setPollCount(i + 1);
         try {
-          const statusRes  = await fetch(`${apiBase}/mpesa/status/${checkoutId}`, {
-            headers: { Authorization: `Bearer ${portalToken}` },
-          });
+          const statusRes  = await fetch(`/mpesa/status/${checkoutId}`, {
+            });
           const statusData = await statusRes.json();
           if (statusData.status === "success") {
             confirmed = true;
@@ -1260,9 +1240,8 @@ const HotspotPortal = () => {
       }
 
       // Refresh subscriber data — activated inline means this shows the live subscription
-      const refreshRes = await fetch(`${apiBase}/portal/status`, {
-        headers: { Authorization: `Bearer ${portalToken}` },
-      });
+      const refreshRes = await fetch(`/portal/status`, {
+        });
       let refreshedSub = subscriber;
       if (refreshRes.ok) {
         const refreshData = await refreshRes.json();
@@ -1281,6 +1260,8 @@ const HotspotPortal = () => {
     } catch (err: any) {
       toast({ title: "Payment Error", description: err.message, variant: "destructive" });
       setStep("phone");
+    } finally {
+      setIsSubmittingPayment(false); // FIX: always re-enable button after completion/error
     }
   };
 
@@ -1290,7 +1271,7 @@ const HotspotPortal = () => {
     setFwaLoading(true);
     setFwaError("");
     try {
-      const res = await fetch(`${apiBase}/portal/fwa/register`, {
+      const res = await fetch(`/portal/fwa/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: fwaPhone }),
@@ -1314,7 +1295,7 @@ const HotspotPortal = () => {
     setFwaError("");
     try {
       const params = hotspotParams.current;
-      const res = await fetch(`${apiBase}/portal/fwa/verify`, {
+      const res = await fetch(`/portal/fwa/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: fwaPhone, otp: fwaOtp, mac: params.mac }),
@@ -1367,7 +1348,7 @@ const HotspotPortal = () => {
       const portalCookie = getCookie(COOKIE_KEY);
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (portalCookie) headers["Authorization"] = `Bearer ${portalCookie}`;
-      const res = await fetch(`${apiBase}/portal/redeem-voucher`, {
+      const res = await fetch(`/portal/redeem-voucher`, {
         method: "POST",
         headers,
         body: JSON.stringify({ code, phone: resolvedPhone, fullName: resolvedFullName }),
@@ -1386,7 +1367,6 @@ const HotspotPortal = () => {
         id: data.subscriber.id, username: data.subscriber.username,
         full_name: data.subscriber.full_name, phone: data.subscriber.phone,
         status: "active", expires_at: data.expiresAt,
-        package_id: null,
         package_name: data.package.name, speed_down: data.package.speed_down,
         speed_up: data.package.speed_up, max_devices: 5, duration_days: data.package.duration_days,
         data_cap_gb: null, router_id: null,
@@ -1409,7 +1389,7 @@ const HotspotPortal = () => {
     setLoggingIn(true);
     setLoginError("");
     try {
-      const res = await fetch(`${apiBase}/portal/login`, {
+      const res = await fetch(`/portal/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: loginPhone.trim(), password: loginPassword }),
@@ -1431,12 +1411,9 @@ const HotspotPortal = () => {
 
       // Issue device token on successful login too
       if (hotspotParams.current.mac) {
-        const tokRes = await fetch(`${apiBase}/portal/issue-device-token`, {
+        const tokRes = await fetch(`/portal/issue-device-token`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${data.token}`,
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mac: hotspotParams.current.mac, deviceType: inferDeviceTypeFromUA() }),
         }).catch(() => null);
         if (tokRes?.ok) {
@@ -1454,7 +1431,7 @@ const HotspotPortal = () => {
         const storedToken = localStorage.getItem(DEVICE_TOKEN_KEY) || getCookie(DEVICE_TOKEN_KEY);
         if (storedToken) {
           try {
-            const authRes = await fetch(`${apiBase}/portal/device-token-auth`, {
+            const authRes = await fetch(`/portal/device-token-auth`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ token: storedToken, mac }),
@@ -1500,7 +1477,7 @@ const HotspotPortal = () => {
           setRecoverError("Enter your phone number to confirm ownership before forcing sign-out of the other device.");
           return;
         }
-        const forceRes = await fetch(`${apiBase}/portal/txn-force-logout`, {
+        const forceRes = await fetch(`/portal/txn-force-logout`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ txnId, phone: recoverPhone.trim() }),
@@ -1518,7 +1495,7 @@ const HotspotPortal = () => {
       const body: Record<string, string> = { txnId };
       if (recoverPhone.trim()) body.phone = recoverPhone.trim();
 
-      const res = await fetch(`${apiBase}/portal/login-with-txn`, {
+      const res = await fetch(`/portal/login-with-txn`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -1553,16 +1530,16 @@ const HotspotPortal = () => {
       const mac = hotspotParams.current.mac;
       if (mac && data.token) {
         // Register device (MAC may be new/changed)
-        await fetch(`${apiBase}/portal/devices/register`, {
+        await fetch(`/portal/devices/register`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.token}` },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mac, deviceName: "My Device", deviceType: inferDeviceTypeFromUA() }),
         }).catch(() => {});
 
         // Issue fresh device token for auto-reconnect going forward
-        const tokRes = await fetch(`${apiBase}/portal/issue-device-token`, {
+        const tokRes = await fetch(`/portal/issue-device-token`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.token}` },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mac, deviceType: inferDeviceTypeFromUA() }),
         }).catch(() => null);
 
@@ -1580,7 +1557,7 @@ const HotspotPortal = () => {
           const storedToken = localStorage.getItem(DEVICE_TOKEN_KEY) || getCookie(DEVICE_TOKEN_KEY);
           if (storedToken) {
             try {
-              const authRes = await fetch(`${apiBase}/portal/device-token-auth`, {
+              const authRes = await fetch(`/portal/device-token-auth`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ token: storedToken, mac }),
@@ -2053,7 +2030,7 @@ const HotspotPortal = () => {
             </div>
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1 h-12" onClick={() => { setStep("select"); setSelectedPkg(null); }} style={{ touchAction: "manipulation" }}>Back</Button>
-              <Button className="flex-1 h-12 text-base font-semibold" onClick={handlePurchase} disabled={!phone || phone.length < 9} style={{ touchAction: "manipulation" }}>Pay via M-Pesa</Button>
+              <Button className="flex-1 h-12 text-base font-semibold" onClick={handlePurchase} disabled={!phone || phone.length < 9 || isSubmittingPayment} style={{ touchAction: "manipulation" }}>{isSubmittingPayment ? <Loader2 className="h-4 w-4 animate-spin" /> : "Pay via M-Pesa"}</Button>
             </div>
             <button onClick={() => setStep("login")} className="text-xs text-primary hover:underline w-full text-center min-h-[44px] flex items-center justify-center" style={{ touchAction: "manipulation" }}>
               Already paid? Sign in instead
@@ -2064,7 +2041,7 @@ const HotspotPortal = () => {
         {/* Processing */}
         {step === "processing" && (() => {
           const elapsedSecs = pollCount * 5;
-          const pct = Math.min(Math.round((pollCount / 24) * 100), 95); // cap at 95% until confirmed
+          const pct = Math.min(Math.round((pollCount / 36) * 100), 95); // FIX: denominator matches 180s loop
           const messages = [
             "Sending payment request…",
             "Waiting for M-Pesa prompt…",

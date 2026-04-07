@@ -3,7 +3,6 @@ import AdminLayout from "@/components/AdminLayout";
 import { PanelErrorBoundary } from "@/components/ErrorBoundary";
 import StatusBadge from "@/components/StatusBadge";
 import { useRouters } from "@/hooks/useDatabase";
-import { supabase } from "@/integrations/supabase/client";
 import {
   Wifi, AlertTriangle, Settings, Plus, Loader2, Save, Eye, EyeOff,
   Download, Trash2, CheckCircle2, ChevronRight, ChevronLeft, Terminal,
@@ -26,32 +25,32 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-const EMPTY_FORM: Record<string, any> = {
+const EMPTY_FORM = {
+  // Step 1 — Basic
   name: "",
   ip_address: "",
-  dynamic_ip: false,
-  cgnat_mode: false,
+  dynamic_ip: false,        // true = LTE/Starlink/dynamic line; IP set by heartbeat
+  cgnat_mode: false,        // true = router is behind CGNAT; no direct API access possible
   location: "",
   secret_radius: "",
+  // API creds (collapsible)
   api_port: 8728,
   api_username: "admin",
   api_password: "",
   api_ssl: false,
   nas_ip: "",
+  // Step 2 — Topology
   wan_interface: "ether1",
   lan_interface: "bridge",
   hotspot_interface: "bridge",
   hotspot_address: "",
   portal_server_ip: "",
   wan_bandwidth_mbps: 100,
-  wan_speed_dynamic: false,
+  wan_speed_dynamic: false,  // true = LTE/Starlink; send wan_bandwidth_mbps=null (no global WAN queue)
   default_conn_limit: 300 as number | null,
   dhcp_pool: "192.168.88.10-192.168.88.254",
   dhcp_prefix_length: 24,
-  targeted_users: 0,
-  dlna_server_ip: "",
-  dlna_port: 8200,
-  dlna_enabled: null,
+  targeted_users: 0,        // 0 = manual entry; >0 = auto-computed pool
 };
 
 // ─── User Capacity → Auto Pool Computation (v3.19.2) ─────────────────────────
@@ -234,13 +233,50 @@ const RoutersPage = () => {
   const handleWizardStep2 = async () => {
     setSaving(true);
     try {
+      // v3.19.2: Route through backend POST /api/admin/routers so the server
+      // can auto-assign ip_slot, run cross-router overlap checks, derive the
+      // IP plan, and register the NAS entry — all in one atomic transaction.
+      // Previously this went direct to Supabase, bypassing all IP validation.
       const payload: any = {
-        name: form.name.trim(),
-        ip_address: form.dynamic_ip ? "0.0.0.0" : (form.ip_address.trim() || "0.0.0.0"),
+        name:               form.name.trim(),
+        ip:                 form.dynamic_ip ? null : (form.ip_address.trim() || null),
+        dynamic_ip:         form.dynamic_ip,
+        cgnat_mode:         form.cgnat_mode,
+        api_port:           Number(form.api_port),
+        api_username:       form.api_username,
+        api_password:       form.api_password,
+        api_ssl:            form.api_ssl,
+        location:           form.location || null,
+        nas_ip:             form.dynamic_ip ? null : (form.nas_ip || form.ip_address.trim() || null),
+        secret:             form.secret_radius || "changeme",   // backend field name is "secret"
+        wan_interface:      form.wan_interface,
+        lan_interface:      form.lan_interface,
+        hotspot_interface:  form.hotspot_interface,
+        hotspot_address:    form.targeted_users > 0 ? null : (form.hotspot_address || null),  // let backend derive from slot
+        portal_server_ip:   form.portal_server_ip || null,
+        wan_bandwidth_mbps: form.wan_speed_dynamic ? null : (Number(form.wan_bandwidth_mbps) || null),
+        default_conn_limit: form.default_conn_limit != null ? Number(form.default_conn_limit) : null,
+        // v3.19.2: If user selected a preset, send dhcp_pool=null so the backend
+        // auto-derives it from the assigned ip_slot. If manual entry, send as-is.
+        dhcp_pool:          form.targeted_users > 0 ? null : (form.dhcp_pool || null),
+        dhcp_prefix_length: form.targeted_users > 0 ? null : (form.dhcp_prefix_length || 24),
+        targeted_users:     form.targeted_users || null,
       };
-      const { data: newRouter, error } = await supabase.from("routers").insert(payload).select().single();
-      if (error) throw error;
-      setNewRouterId(newRouter.id);
+
+      const res = await fetch("/api/admin/routers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ,
+        },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || json.errors?.[0]?.msg || "Failed to add router");
+      }
+
+      setNewRouterId(json.router.id);
       queryClient.invalidateQueries({ queryKey: ["routers"] });
       setWizardStep(2);
     } catch (err: any) {
@@ -253,7 +289,26 @@ const RoutersPage = () => {
   // ── Download onboard script ────────────────────────────────────────────────
 
   const downloadScript = async (routerId: string, routerName: string) => {
-    toast({ title: "Download", description: "Script download is not available in this environment." });
+    setDownloading(true);
+    try {
+      const res = await fetch(`/api/admin/mikrotik/onboard-script/${routerId}`, {
+        });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || "Download failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `setup-${routerName.toLowerCase().replace(/\s+/g, "-")}.rsc`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast({ title: "Download Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const openWizard = () => {
@@ -309,10 +364,38 @@ const RoutersPage = () => {
     try {
       const payload: any = {
         name: editForm.name.trim(),
-        ip_address: editForm.dynamic_ip ? "0.0.0.0" : editForm.ip_address.trim(),
+        ip_address: editForm.dynamic_ip ? null : editForm.ip_address.trim(),
+        dynamic_ip: editForm.dynamic_ip,
+        cgnat_mode: editForm.cgnat_mode,
+        api_port: Number(editForm.api_port),
+        api_username: editForm.api_username,
+        api_password: editForm.api_password,
+        api_ssl: editForm.api_ssl,
+        location: editForm.location || null,
+        nas_ip: editForm.nas_ip || null,
+        secret_radius: editForm.secret_radius || null,
+        wan_interface: editForm.wan_interface,
+        lan_interface: editForm.lan_interface,
+        hotspot_interface: editForm.hotspot_interface,
+        hotspot_address: editForm.hotspot_address || null,
+        portal_server_ip: editForm.portal_server_ip || null,
+        wan_bandwidth_mbps: editForm.wan_speed_dynamic ? null : (Number(editForm.wan_bandwidth_mbps) || null),
+        default_conn_limit: editForm.default_conn_limit != null ? Number(editForm.default_conn_limit) : null,
+        dhcp_pool: editForm.dhcp_pool || null,
+        dhcp_prefix_length: editForm.dhcp_prefix_length || 24,
+        // BUG-DLNA-01 FIX: per-router DLNA settings
+        // Empty string → null (use global setting); explicit value overrides global
+        dlna_server_ip: (editForm as any).dlna_server_ip?.trim() || null,
+        dlna_port: (editForm as any).dlna_port ? Number((editForm as any).dlna_port) : null,
+        dlna_enabled: (editForm as any).dlna_enabled,  // null = inherit global
       };
-      const { error } = await supabase.from("routers").update(payload).eq("id", editId);
-      if (error) throw error;
+      const res = await fetch(`/api/admin/routers/${editId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || json.errors?.[0]?.msg || "Update failed");
       toast({ title: "Router Updated", description: `${editForm.name} saved.` });
       queryClient.invalidateQueries({ queryKey: ["routers"] });
       setEditOpen(false);
@@ -329,8 +412,11 @@ const RoutersPage = () => {
     if (!deleteId) return;
     setDeleteDeleting(true);
     try {
-      const { error } = await supabase.from("routers").delete().eq("id", deleteId);
-      if (error) throw error;
+      const res = await fetch(`/api/admin/routers/${deleteId}`, {
+        method: "DELETE",
+        });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Delete failed");
       toast({ title: "Router Removed" });
       queryClient.invalidateQueries({ queryKey: ["routers"] });
       setDeleteId(null);
@@ -450,7 +536,7 @@ const RoutersPage = () => {
                         <span className="text-xs font-mono text-muted-foreground">{r.dhcp_pool}</span>
                       </div>
                     )}
-                    {/* v3.15.4: Linked MeshDesk meshes */}
+                    {/* Linked networks */}
                     {(r.linked_mesh_count > 0 || r.ip_conflict) && (
                       <div className="pt-2 border-t border-border/30">
                         <div className="flex justify-between text-sm">

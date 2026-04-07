@@ -3,7 +3,6 @@ import { useDebounce } from "@/hooks/useDebounce";
 import AdminLayout from "@/components/AdminLayout";
 import StatusBadge from "@/components/StatusBadge";
 import { useSubscribers, usePackages, useRouters, formatKES } from "@/hooks/useDatabase";
-import { supabase } from "@/integrations/supabase/client";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -51,7 +50,12 @@ const UsersPage = () => {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
   const [typeFilter, setTypeFilter] = useState<string>("all");
-  const { data: subscribers, isLoading } = useSubscribers(search || undefined);
+  // BUG-5 FIX: Page state for server-side pagination. Reset to page 1 on search/filter change.
+  const [page, setPage] = useState(1);
+  const { data: subsResult, isLoading } = useSubscribers(search || undefined, page);
+  const subscribers = subsResult?.data ?? (Array.isArray(subsResult) ? subsResult : []);
+  const subscriberTotal: number = subsResult?.total ?? subscribers.length;
+  const subscriberLimit: number = subsResult?.limit ?? 500;
   const { data: packages = [] } = usePackages();
   const { data: routers = [] } = useRouters();
   const queryClient = useQueryClient();
@@ -126,26 +130,53 @@ const UsersPage = () => {
     }
     setSaving(true);
     try {
+      // HIGH-01 FIX v3.19.0: Route through backend API instead of writing directly
+      // to Supabase. Direct Supabase writes stored pppoe_password as PLAINTEXT and
+      // never generated portal_password_hash or nt_password — PPPoE subscribers
+      // created via the admin UI could not authenticate via RADIUS (MSCHAPv2).
+      /api");
+
       const payload: any = {
         full_name: form.full_name.trim(),
         phone: form.phone.trim(),
         username: form.username.trim(),
         type: form.type,
         package_id: form.package_id || null,
+        // Router only relevant for PPPoE (push secret to specific router)
+        router_id: form.type === "pppoe" ? (form.router_id && form.router_id !== "__all__" ? form.router_id : null) : null,
         status: form.status,
-        mac_binding: form.mac_binding || null,
+        pppoe_username: form.type === "pppoe" ? (form.pppoe_username || null) : null,
+        hotspot_enabled: form.type === "pppoe" ? form.hotspot_enabled : false,
+        hotspot_package_ids: (form.type === "pppoe" && form.hotspot_enabled && form.hotspot_package_ids.length)
+          ? form.hotspot_package_ids : null,
+        mac_binding: form.type === "hotspot" ? (form.mac_binding || null) : null,
         static_ip: form.static_ip || null,
         kyc_verified: form.kyc_verified,
       };
-      if (editId) {
-        const { error } = await supabase.from("subscribers").update(payload).eq("id", editId);
-        if (error) throw error;
-        toast({ title: "Subscriber Updated", description: `${form.full_name} saved.` });
-      } else {
-        const { error } = await supabase.from("subscribers").insert(payload);
-        if (error) throw error;
-        toast({ title: "Subscriber Added", description: `${form.full_name} created.` });
+      // Only send PPPoE password if it was entered (backend ignores absent field on update)
+      if (form.pppoe_password && form.type === "pppoe") payload.pppoe_password = form.pppoe_password;
+
+      const url    = editId ? `/admin/subscribers/${editId}` : `/admin/subscribers`;
+      const method = editId ? "PATCH" : "POST";
+
+      const res  = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          ,
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error ?? data.errors?.[0]?.msg ?? "Save failed");
       }
+
+      toast({
+        title: editId ? "Subscriber Updated" : "Subscriber Added",
+        description: `${form.full_name} ${editId ? "saved" : "created"} successfully.`,
+      });
       queryClient.invalidateQueries({ queryKey: ["subscribers"] });
       setOpen(false);
     } catch (err: any) {
@@ -171,11 +202,11 @@ const UsersPage = () => {
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search by name, username or phone..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 bg-card border-border" />
+            <Input placeholder="Search by name, username or phone..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="pl-9 bg-card border-border" />
           </div>
           <div className="flex gap-2">
             {["all", "hotspot", "pppoe"].map((t) => (
-              <PackageFilterBtn key={t} label={t === "all" ? "All" : t === "hotspot" ? "Hotspot" : "PPPoE"} active={typeFilter === t} onClick={() => setTypeFilter(t)} />
+              <PackageFilterBtn key={t} label={t === "all" ? "All" : t === "hotspot" ? "Hotspot" : "PPPoE"} active={typeFilter === t} onClick={() => { setTypeFilter(t); setPage(1); }} />
             ))}
           </div>
         </div>
@@ -239,6 +270,41 @@ const UsersPage = () => {
                 )}
               </TableBody>
             </Table>
+          )}
+          {/* BUG-5 FIX: Pagination controls — show when total exceeds one page */}
+          {subscriberTotal > subscriberLimit && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-border/40 text-xs text-muted-foreground">
+              <span>
+                Showing {Math.min((page - 1) * subscriberLimit + 1, subscriberTotal)}–{Math.min(page * subscriberLimit, subscriberTotal)} of {subscriberTotal} subscribers
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  disabled={page <= 1}
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                >
+                  ← Prev
+                </Button>
+                <span className="flex items-center px-2">Page {page} of {Math.ceil(subscriberTotal / subscriberLimit)}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  disabled={page * subscriberLimit >= subscriberTotal}
+                  onClick={() => setPage(p => p + 1)}
+                >
+                  Next →
+                </Button>
+              </div>
+            </div>
+          )}
+          {/* Show count when within one page so admins know how many are loaded */}
+          {subscriberTotal <= subscriberLimit && subscriberTotal > 0 && (
+            <div className="px-4 py-2 border-t border-border/40 text-xs text-muted-foreground">
+              {subscriberTotal} subscriber{subscriberTotal !== 1 ? "s" : ""}
+            </div>
           )}
         </div>
       </div>

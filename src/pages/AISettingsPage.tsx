@@ -12,13 +12,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Brain, Save, RefreshCw, CheckCircle, AlertCircle, Loader2, Zap, Bell, MapPin, MessageSquare } from "lucide-react";
-
-const API = (window as Window & { __MIKROBILL_API__?: string }).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+const API = "";
 async function adminApi(method: string, path: string, body?: object) {
-  const token = localStorage.getItem("auth_token") ?? sessionStorage.getItem("auth_token");
+  ?? ""; // FIX: canonical mb_auth_token
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
   return res.json();

@@ -21,16 +21,15 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { UserPlus, Shield, Loader2, Edit, Trash2, AlertCircle } from "lucide-react";
-import { getToken } from "@/lib/authClient";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 
-const API = (window as Window & { __MIKROBILL_API__?: string }).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+const API = "";
 
 async function apiFetch(method: string, path: string, body?: object) {
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
   return res.json();
@@ -81,7 +80,7 @@ const EDITABLE_ROLES = ["network_admin", "billing_admin", "support_agent", "fiel
 
 const AdminRolesPage = () => {
   const { data: userRoles = [] } = useUserRoles();
-  const admins = userRoles as any[];
+  const admins = userRoles as Record<string, unknown>[];
   const queryClient = useQueryClient();
   const { toast } = useToast();
 

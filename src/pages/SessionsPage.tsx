@@ -19,7 +19,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { XCircle, RefreshCw, Search, Wifi } from "lucide-react";
-import { getToken } from "@/lib/authClient";
 import { useToast } from "@/hooks/use-toast";
 
 const SessionsPage = () => {
@@ -44,13 +43,12 @@ const SessionsPage = () => {
   const handleDisconnect = async (session: any) => {
     setDisconnecting(session.id);
     try {
-      const token = getToken();
-      const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
-      const res = await fetch(`${API}/admin/mikrotik/disconnect`, {
+      /api");
+      const res = await fetch(`/admin/mikrotik/disconnect`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ,
         },
         // BUG-P3-HIGH-01 FIX: backend mikrotik.js:731 validates routerIds as .isArray({min:1}).
         // Sending routerId (string) always failed validation; wrap in array.

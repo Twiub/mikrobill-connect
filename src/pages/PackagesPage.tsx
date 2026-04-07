@@ -1,7 +1,6 @@
 import { useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { usePackages, formatKES } from "@/hooks/useDatabase";
-import { supabase } from "@/integrations/supabase/client";
 import { Zap, Plus, Pencil, Save, Loader2, Wifi, Network, Radio, HelpCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -83,36 +82,141 @@ const PackagesPage = () => {
       toast({ title: "Validation Error", description: "Name, download and upload speeds are required.", variant: "destructive" });
       return;
     }
+    // R22-005 FIX: Validate mesh_vlan_id >= 2 to prevent VLAN 0 (untagged) or VLAN 1
+    // (management) being assigned. VLAN 1 is the switch management VLAN on most AP
+    // hardware — a subscriber on VLAN 1 would be on the same L2 as the AP management
+    // interface, allowing ARP poisoning of the AP's management IP.
+    // DB CHECK constraint (migration 216) also enforces >= 2, but we validate here
+    // first to give a clear user-facing error rather than a cryptic Supabase DB error.
+    if (form.mesh_vlan_id !== "" && form.mesh_vlan_id !== null) {
+      const vlanNum = Number(form.mesh_vlan_id);
+      if (isNaN(vlanNum) || vlanNum < 2 || vlanNum > 4094 || !Number.isInteger(vlanNum)) {
+        toast({ title: "Validation Error", description: "Mesh VLAN ID must be an integer between 2 and 4094. VLAN 0 and VLAN 1 (management) are reserved.", variant: "destructive" });
+        return;
+      }
+
+      // D-01 FIX (Round 23): Check for collision with management VLANs on linked mesh nodes.
+      // If a subscriber data VLAN ID matches a node's management VLAN, traffic from that
+      // subscriber will be injected into the AP management bridge (br-mgmt / br-vlanN),
+      // making the AP unreachable from MikroBill and disabling all config pushes for that node.
+      //
+      // We query mesh_node_settings for any management_vlan that equals this VLAN ID.
+      // The check is non-blocking (soft warning + hard block) — it runs before the DB insert.
+      try {
+        const vlanRes = await fetch(
+          `/api/admin/data/mesh-node-settings?management_vlan=${vlanNum}&limit=3`,
+          {  }
+        );
+        if (vlanRes.ok) {
+          const conflictingNodes = await vlanRes.json();
+          if (Array.isArray(conflictingNodes) && conflictingNodes.length > 0) {
+            const nodeNames = conflictingNodes
+              .map((n: any) => n.nodes?.name ?? n.node_id)
+              .join(", ");
+            toast({
+              title: "VLAN Conflict — D-01",
+              description: `VLAN ID ${vlanNum} is the management VLAN for node(s): ${nodeNames}. Using it as a subscriber data VLAN would break AP management connectivity. Choose a different VLAN ID.`,
+              variant: "destructive",
+            });
+            setSaving(false);
+            return;
+          }
+        }
+      } catch (_vlanCheckErr) {
+        // Non-fatal: if the check fails (e.g. mesh_node_settings not yet migrated),
+        // proceed with the save. The DB constraint is the hard backstop.
+      }
+    }
     setSaving(true);
     try {
       const payload: any = {
         name: form.name.trim(), price: Number(form.price), duration_days: Number(form.duration_days),
+        duration_unit: form.duration_unit,
         speed_down: form.speed_down, speed_up: form.speed_up, max_devices: Number(form.max_devices),
         type: form.type, tier: form.tier, active: form.active,
+        pppoe_profile: form.pppoe_profile || null, hotspot_profile: form.hotspot_profile || null,
+        burst_down: form.burst_down || null, burst_up: form.burst_up || null,
+        burst_threshold: form.burst_threshold || null,
+        burst_time_s: form.burst_time_s ? Number(form.burst_time_s) : null,
+        data_cap_gb: form.data_cap_gb ? Number(form.data_cap_gb) : null,
+        shared_users_max: Number(form.shared_users_max), description: form.description || null,
+        max_connections_per_user: form.max_connections_per_user != null ? Number(form.max_connections_per_user) : null,
+        mesh_vlan_id: form.mesh_vlan_id !== "" ? Number(form.mesh_vlan_id) : null,
       };
       if (editId) {
-        const { error } = await supabase.from("packages").update(payload).eq("id", editId);
-        if (error) throw error;
+        const res = await fetch(`/api/admin/data/packages/${editId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw Object.assign(new Error(errBody.error ?? `HTTP ${res.status}`), { status: res.status, errBody });
+        }
         toast({ title: "Package Updated", description: `${form.name} saved.` });
       } else {
-        const { error } = await supabase.from("packages").insert(payload);
-        if (error) throw error;
+        const res = await fetch(`/api/admin/data/packages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw Object.assign(new Error(errBody.error ?? `HTTP ${res.status}`), { status: res.status, errBody });
+        }
         toast({ title: "Package Created", description: `${form.name} created.` });
       }
       queryClient.invalidateQueries({ queryKey: ["packages"] });
       setOpen(false);
     } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      // B-02 FIX (Round 23): Translate PostgreSQL unique constraint violation (code 23505)
+      // for mesh_vlan_id into a clear user-facing 409-style error instead of a cryptic
+      // Supabase error message. The race condition: two admins simultaneously save a
+      // package with the same VLAN ID — one wins, the other sees code 23505.
+      const isVlanConflict =
+        err?.status === 409 ||
+        err?.code === "23505" ||
+        (err?.message || "").includes("mesh_vlan_id") ||
+        ((err?.message || "").includes("unique") && (err?.message || "").includes("vlan")) ||
+        (err?.errBody?.error || "").includes("mesh_vlan_id");
+      if (isVlanConflict) {
+        toast({
+          title: "VLAN ID Already Taken — B-02",
+          description: `VLAN ID ${form.mesh_vlan_id} was just assigned to another package by a concurrent save. Please choose a different VLAN ID and try again.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      }
     } finally {
       setSaving(false);
     }
   };
 
   const toggleActive = async (pkg: any) => {
+    // BUG-S2-003 FIX v3.19.1: Direct supabase.from("packages").update() bypasses the backend
+    // and the packages.active ↔ is_active sync trigger may not fire reliably via PostgREST
+    // (RLS policies can intercept before triggers on some Supabase configurations).
+    // Route through the admin backend so the trigger fires on the correct connection.
     try {
-      const { error } = await supabase.from("packages").update({ active: !pkg.active }).eq("id", pkg.id);
-      if (error) throw error;
-    } catch (_) {}
+      /api");
+      await fetch(`/admin/packages/${pkg.id}/toggle-active`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ,
+        },
+        body: JSON.stringify({ active: !pkg.active }),
+      });
+    } catch (_) {
+      // Fallback: direct REST API PATCH
+      const fallbackAPI = "";
+      await fetch(`${fallbackAPI}/api/admin/data/packages/${pkg.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: !pkg.active }),
+      }).catch(() => {});
+    }
     queryClient.invalidateQueries({ queryKey: ["packages"] });
   };
 

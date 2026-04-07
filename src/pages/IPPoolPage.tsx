@@ -17,7 +17,6 @@ import { RefreshCw, Server, AlertTriangle, CheckCircle2 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from "recharts";
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface PoolStat {
@@ -60,7 +59,7 @@ function useIpPools() {
     setError(null);
     try {
       const res  = await fetch("/api/admin/ip-pools", {
-        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        // FIX: canonical mb_auth_token
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
