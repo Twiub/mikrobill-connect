@@ -21,8 +21,6 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle, XCircle, FileText, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { getToken } from "@/lib/authClient";
-
 const KYCPage = () => {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
@@ -31,16 +29,15 @@ const KYCPage = () => {
   const { toast } = useToast();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  const apiBase = () => (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+  .__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
 
   // BUG-P3-CRIT-03 FIX: Verify button previously had no onClick handler.
   const handleVerify = async (kyc: any) => {
     setActionLoading(`verify-${kyc.id}`);
     try {
-      const res = await fetch(`${apiBase()}/admin/kyc/${kyc.id}/verify`, {
+      const res = await fetch(`/admin/kyc/${kyc.id}/verify`, {
         method: "PUT",
-        headers: { Authorization: `Bearer ${await getToken()}` },
-      });
+        });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to verify");
       toast({ title: "KYC Verified", description: `${kyc.full_name} marked as verified.` });
@@ -53,7 +50,7 @@ const KYCPage = () => {
   // BUG-P3-CRIT-03 FIX: View ID button previously had no onClick handler.
   const handleViewId = (kyc: any) => {
     // Open KYC document viewer — fetch from /api/admin/kyc/:id to get doc info
-    const url = `${apiBase()}/admin/kyc/${kyc.id}`;
+    const url = `/admin/kyc/${kyc.id}`;
     window.open(url, "_blank", "noopener,noreferrer");
   };
 

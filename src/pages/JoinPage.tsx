@@ -113,7 +113,7 @@ export default function JoinPage() {
     if (!token) return;
     setPageState("on_wifi_joining");
     try {
-      const r = await fetch(`${API}/api/portal/sharing/join`, {
+      const r = await fetch(`/api/portal/sharing/join`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, mac, deviceName: deviceName || "My Phone", deviceType: "phone" }),
@@ -146,7 +146,7 @@ export default function JoinPage() {
       return;
     }
 
-    fetch(`${API}/api/portal/sharing/preview/${token}`)
+    fetch(`/api/portal/sharing/preview/${token}`)
       .then(r => r.json())
       .then(data => {
         if (!data.success) { setPageState("invalid"); setErrorMsg("Link not found."); return; }
@@ -189,7 +189,7 @@ export default function JoinPage() {
     savePendingToken(token);
 
     try {
-      const r = await fetch(`${API}/api/portal/sharing/defer`, {
+      const r = await fetch(`/api/portal/sharing/defer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, deviceName: deviceName.trim(), cookieId }),

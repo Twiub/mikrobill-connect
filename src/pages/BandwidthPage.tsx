@@ -1,8 +1,7 @@
 import { useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
-import { supabase } from "@/integrations/supabase/client";
-import { useQueryClient } from "@tanstack/react-query";
-import { usePackages, useBandwidthSchedules } from "@/hooks/useDatabase";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { usePackages } from "@/hooks/useDatabase";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +14,16 @@ import { Plus, Clock, Zap, Loader2, Save, Pencil, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const useBandwidthSchedules = () => useQuery({
+  queryKey: ["bandwidth_schedules"],
+  queryFn: async () => {
+    const res = await fetch(`/api/admin/data/bandwidth-schedules`, {
+      });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+});
 
 const EMPTY_SCHED = {
   package_id: "", label: "", start_time: "00:00", end_time: "08:00",
@@ -59,19 +68,27 @@ const BandwidthPage = () => {
     }
     setSaving(true);
     try {
-      const payload: any = {
-        label: form.label.trim(), start_time: form.start_time,
+      const payload = {
+        package_id: form.package_id, label: form.label.trim(), start_time: form.start_time,
         end_time: form.end_time, rate_down: form.rate_down, rate_up: form.rate_up,
         day_of_week: form.day_of_week.length ? form.day_of_week : null,
-        package_id: form.package_id || null,
+        is_active: form.is_active, priority: Number(form.priority),
       };
       if (editId) {
-        const { error } = await supabase.from("bandwidth_schedules").update(payload).eq("id", editId);
-        if (error) throw error;
+        const res = await fetch(`/api/admin/data/bandwidth-schedules/${editId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         toast({ title: "Schedule Updated" });
       } else {
-        const { error } = await supabase.from("bandwidth_schedules").insert(payload);
-        if (error) throw error;
+        const res = await fetch(`/api/admin/data/bandwidth-schedules`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         toast({ title: "Schedule Created" });
       }
       queryClient.invalidateQueries({ queryKey: ["bandwidth_schedules"] });
@@ -83,13 +100,19 @@ const BandwidthPage = () => {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this schedule?")) return;
-    await supabase.from("bandwidth_schedules").delete().eq("id", id);
+    await fetch(`/api/admin/data/bandwidth-schedules/${id}`, {
+      method: "DELETE",
+      });
     queryClient.invalidateQueries({ queryKey: ["bandwidth_schedules"] });
     toast({ title: "Schedule Deleted" });
   };
 
   const toggleActive = async (s: any) => {
-    // bandwidth_schedules table doesn't have is_active column, skip
+    await fetch(`/api/admin/data/bandwidth-schedules/${s.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_active: !s.is_active }),
+    });
     queryClient.invalidateQueries({ queryKey: ["bandwidth_schedules"] });
   };
 

@@ -15,8 +15,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Terminal, Download, Copy, RefreshCw, CheckCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-import { getToken } from "@/lib/authClient";
-
 const DEFAULT_FORM = {
   radiusHost:         "",
   radiusSecret:       "",
@@ -53,11 +51,11 @@ const MikrotikScriptPage = () => {
     setLoading(true);
     try {
       const apiBase = import.meta.env.VITE_BACKEND_URL ?? "/api";
-      const token = getToken() ?? "";
+      ?? "";
 
-      const res = await fetch(`${apiBase}/admin/mikrotik/setup-script`, {
+      const res = await fetch(`/admin/mikrotik/setup-script`, {
         method:  "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body:    JSON.stringify(form),
       });
 
@@ -187,7 +185,7 @@ const MikrotikScriptPage = () => {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Conn Limit / User (anti-torrent)</Label>
-                  <Input type="number" placeholder="300 (blank = disabled)" value={form.maxConnectionsPerUser ?? ""} onChange={(e) => set("maxConnectionsPerUser")(e.target.value === "" ? null : parseInt(e.target.value, 10) as any)} />
+                  <Input type="number" placeholder="300 (blank = disabled)" value={form.maxConnectionsPerUser ?? ""} onChange={(e) => set("maxConnectionsPerUser")(e.target.value === "" ? null : parseInt(e.target.value, 10))} />
                   <p className="text-[10px] text-muted-foreground">150=strict · 300=residential · 400=PPPoE · blank=none</p>
                 </div>
               </div>
@@ -249,7 +247,14 @@ const MikrotikScriptPage = () => {
 };
 
 // Client-side fallback script generator (mirrors backend service)
+// FIX: Sanitize user inputs to prevent RouterOS command injection via quotes/backslashes
+function sanitizeRouterOS(value: string): string {
+  if (!value) return "";
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
 function generateClientSideScript(cfg: typeof DEFAULT_FORM): string {
+  const s = sanitizeRouterOS;
   return `# ================================================================
 # Mikrobill Connect v3.2.0 — MikroTik RouterOS Setup Script
 # Generated: ${new Date().toISOString()}
@@ -257,28 +262,28 @@ function generateClientSideScript(cfg: typeof DEFAULT_FORM): string {
 
 # ── 1. RADIUS Client ─────────────────────────────────────────────
 /radius remove [find]
-/radius add address=${cfg.radiusHost} secret="${cfg.radiusSecret}" service=ppp,hotspot authentication-port=1812 accounting-port=1813 timeout=3s comment="Mikrobill RADIUS"
+/radius add address=${`${s(cfg.radiusHost)}`} secret="${`${s(cfg.radiusSecret)}`}" service=ppp,hotspot authentication-port=1812 accounting-port=1813 timeout=3s comment="Mikrobill RADIUS"
 /radius incoming set accept=yes port=3799
 
 # ── 2. PPPoE Server ──────────────────────────────────────────────
 /ppp profile add name=mikrobill-pppoe use-radius=yes change-tcp-mss=yes only-one=yes
-/interface pppoe-server server add interface=${cfg.wanInterface} service-name=mikrobill authentication=mschap2 default-profile=mikrobill-pppoe one-session-per-host=yes max-sessions=1024 disabled=no
+/interface pppoe-server server add interface=${`${s(cfg.wanInterface)}`} service-name=mikrobill authentication=mschap2 default-profile=mikrobill-pppoe one-session-per-host=yes max-sessions=1024 disabled=no
 
 # ── 3. Hotspot Server ────────────────────────────────────────────
 /ip hotspot profile add name=mikrobill-hotspot use-radius=yes radius-accounting=yes hotspot-address=192.168.88.1 login-by=http-chap,cookie
-/ip hotspot add name=hotspot1 interface=${cfg.hotspotInterface} profile=mikrobill-hotspot addresses-per-mac=2 disabled=no
+/ip hotspot add name=hotspot1 interface=${`${s(cfg.hotspotInterface)}`} profile=mikrobill-hotspot addresses-per-mac=2 disabled=no
 
 # ── 4. DHCP Server ───────────────────────────────────────────────
-/ip pool add name=dhcp-pool ranges=${cfg.dhcpPool}
-/ip dhcp-server add name=dhcp1 interface=${cfg.lanInterface} address-pool=dhcp-pool lease-time=1d disabled=no
+/ip pool add name=dhcp-pool ranges=${`${s(cfg.dhcpPool)}`}
+/ip dhcp-server add name=dhcp1 interface=${`${s(cfg.lanInterface)}`} address-pool=dhcp-pool lease-time=1d disabled=no
 /ip dhcp-server network add address=192.168.88.0/24 gateway=192.168.88.1 dns-server=8.8.8.8,1.1.1.1
 
 # ── 5. CAKE QoS (RouterOS v7) ────────────────────────────────────
-/queue tree add name=wan-cake parent=global packet-mark=all queue=cake max-limit=${cfg.wanBandwidthMbps}M comment="WAN CAKE shaper"
+/queue tree add name=wan-cake parent=global packet-mark=all queue=cake max-limit=${`${s(cfg.wanBandwidthMbps)}`}M comment="WAN CAKE shaper"
 
 # ── 6. TTL Mangle — Tethering Detection ─────────────────────────
-/ip firewall mangle add chain=prerouting in-interface=${cfg.lanInterface} ttl=63 action=add-src-to-address-list address-list=tethered-devices address-list-timeout=10m comment="TTL 63 tether (Android)"
-/ip firewall mangle add chain=prerouting in-interface=${cfg.lanInterface} ttl=127 action=add-src-to-address-list address-list=tethered-devices address-list-timeout=10m comment="TTL 127 tether (iOS)"
+/ip firewall mangle add chain=prerouting in-interface=${`${s(cfg.lanInterface)}`} ttl=63 action=add-src-to-address-list address-list=tethered-devices address-list-timeout=10m comment="TTL 63 tether (Android)"
+/ip firewall mangle add chain=prerouting in-interface=${`${s(cfg.lanInterface)}`} ttl=127 action=add-src-to-address-list address-list=tethered-devices address-list-timeout=10m comment="TTL 127 tether (iOS)"
 
 # ── 7. TV Bypass Address List ────────────────────────────────────
 /ip firewall address-list add list=allowed-tvs address=0.0.0.0 comment="Managed by billing system" disabled=yes

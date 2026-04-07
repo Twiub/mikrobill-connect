@@ -23,7 +23,6 @@ import {
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface QueueStat {
@@ -81,7 +80,7 @@ function dropBadge(rate: number) {
 }
 
 function authHeaders() {
-  return { Authorization: `Bearer ${localStorage.getItem("token")}` };
+  return { }; // FIX: canonical mb_auth_token
 }
 
 // ── Zone diagram component ────────────────────────────────────────────────────

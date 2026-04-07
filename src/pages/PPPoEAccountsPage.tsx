@@ -7,7 +7,6 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useDebounce } from "@/hooks/useDebounce";
 import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import StatusBadge from "@/components/StatusBadge";
@@ -16,13 +15,12 @@ import {
   Home, Wifi, WifiOff, CheckCircle, Eye, EyeOff, Copy,
   Loader2, RefreshCw, Search, Phone, User, Lock,
 } from "lucide-react";
-
-const API = (window as any).__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+/api");
 async function adminApi(method: string, path: string, body?: object) {
-  const token = localStorage.getItem("auth_token") ?? sessionStorage.getItem("auth_token");
+  ?? ""; // FIX: canonical mb_auth_token
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
   return res.json();
