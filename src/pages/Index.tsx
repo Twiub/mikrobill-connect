@@ -8,7 +8,7 @@ import { useBranding } from "@/hooks/useBranding";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, Cell } from "recharts";
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { CardSkeleton, TableSkeleton } from "@/components/ui/skeleton";
 
 
@@ -26,15 +26,26 @@ const Dashboard = () => {
   const { data: transactions = [] } = useTransactions();
   const { data: sessions = [] }     = useActiveSessions();
   const { data: routers = [] }      = useRouters();
-  const { data: subscribers = [] }  = useSubscribers();
+  const { data: subsResult }  = useSubscribers();
+  const subscribers = subsResult?.data ?? (Array.isArray(subsResult) ? subsResult : []);
 
   const txns = transactions as any[];
   const rtrs = routers as any[];
   const subs = subscribers as any[];
 
-  // BUG-S4-002 FIX v3.19.1: todayRevenue was summing ALL fetched transactions with no
-  // date filter. With limit=200, this could span weeks of payments. Now filters to today.
-  const todayStart = new Date();
+  // FIX: daySeed resets at midnight so revenue metric doesn't go stale on dashboards
+  // left open overnight (was computing todayStart once on mount, freezing at yesterday's date)
+  const [daySeed, setDaySeed] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0);
+      if (Date.now() >= tomorrow.getTime()) setDaySeed(Date.now());
+    }, 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const todayStart = new Date(daySeed);
   todayStart.setHours(0, 0, 0, 0);
   const todayRevenue = txns
     .filter((t) => t.status === "success" && new Date(t.created_at) >= todayStart)
