@@ -1,64 +1,48 @@
 /**
- * AdminSidebar.tsx — v4.0.0
- *
- * FIXES:
- *  - MOBILE-03: Accepts onNavClick prop — called on every nav link click
- *    so AdminLayout can close the mobile drawer automatically.
- *  - MOBILE-05: Added aria-current="page" for active link (accessibility).
- *  - PERF-02: Icon size consistent, no reflow.
- *  - ARIA-01: Sign out button has descriptive aria-label.
+ * AdminSidebar.tsx — WiFi Billing Edition (Stripped)
  */
 
 import { Link, useLocation } from "react-router-dom";
 import { useBranding } from "@/hooks/useBranding";
 import { useAuth } from "@/hooks/useAuth";
-import { useEffect, useState } from "react";
-import { getToken } from "@/lib/authClient";
 import {
   LayoutDashboard, Users, Package, Receipt, Activity, TicketCheck, Router, Wifi,
-  Shield, BarChart3, AlertTriangle, Brain, FileText, DollarSign, Bell, Clock,
-  Link2, ShieldAlert, UserCog, Settings, MapPin, Monitor, LogOut, Map, Database, Gauge, Terminal,
-  Radio, Globe, Network, BarChart2, Zap, Home, Grid3x3,
+  Shield, BarChart3, AlertTriangle, Brain, DollarSign, Bell, Clock,
+  Link2, ShieldAlert, UserCog, Settings, Monitor, LogOut, Database, Gauge, Terminal,
+  Globe, BarChart2, Zap, Home,
 } from "lucide-react";
 
 const ALL_NAV_ITEMS = [
-  { path: "/",               slug: "dashboard",        icon: LayoutDashboard, label: "Dashboard" },
-  { path: "/users",          slug: "users",             icon: Users,           label: "Subscribers" },
-  { path: "/packages",       slug: "packages",          icon: Package,         label: "Packages" },
-  { path: "/transactions",   slug: "transactions",      icon: Receipt,         label: "Transactions" },
-  { path: "/sessions",       slug: "sessions",          icon: Activity,        label: "Active Sessions" },
-  { path: "/tickets",        slug: "tickets",           icon: TicketCheck,     label: "Tickets" },
-  { path: "/ticket-map",     slug: "ticket-map",        icon: MapPin,          label: "Ticket Map" },
-  { path: "/coverage-map",   slug: "coverage-map",      icon: Map,             label: "Coverage Map" },
-  { path: "/routers",        slug: "routers",           icon: Router,          label: "MikroTik Routers" },
-  { path: "/meshdesk",       slug: "meshdesk",          icon: Radio,           label: "MESHdesk" },
-  { path: "/mesh-planner",   slug: "mesh-planner",      icon: Grid3x3,         label: "Mesh Node Planner" },
-  { path: "/apdesk",         slug: "apdesk",            icon: Wifi,            label: "APdesk" },
-  { path: "/network-hierarchy", slug: "network-hierarchy", icon: Globe,        label: "Networks & Clouds" },
-  { path: "/network",        slug: "network",           icon: Monitor,         label: "Network Monitor" },
-  { path: "/ip-pools",       slug: "ip-pools",          icon: Database,        label: "IP Pools" },
-  { path: "/qos",            slug: "qos",               icon: Gauge,           label: "QoS / CAKE" },
-  { path: "/autorate",       slug: "autorate",          icon: Activity,        label: "AutoRate Monitor" },
-  { path: "/libreqos",       slug: "libreqos",          icon: BarChart2,       label: "LibreQoS" },
-  { path: "/mikrotik-scripts", slug: "mikrotik-scripts",icon: Terminal,        label: "MikroTik Scripts" },
-  { path: "/analytics",      slug: "analytics",         icon: BarChart3,       label: "Analytics" },
-  { path: "/ai-health",           slug: "ai-health",           icon: Brain,   label: "AI Health" },
-  { path: "/ai-settings",         slug: "ai-settings",         icon: Zap,     label: "AI Settings" },
-  { path: "/proximity-campaigns", slug: "proximity-campaigns", icon: MapPin,  label: "Proximity Campaigns" },
-  { path: "/pppoe-accounts",      slug: "pppoe-accounts",      icon: Home,    label: "PPPoE Portal Mgmt" },
-  { path: "/error-logs",     slug: "error-logs",        icon: AlertTriangle,   label: "Error Logs" },
-  { path: "/expenditure",    slug: "expenditure",       icon: DollarSign,      label: "Expenditure" },
-  { path: "/bandwidth",      slug: "bandwidth",         icon: Clock,           label: "Bandwidth Schedules" },
-  { path: "/ip-binding",     slug: "ip-binding",        icon: Link2,           label: "IP/MAC Binding" },
-  { path: "/sharing",        slug: "sharing",           icon: ShieldAlert,     label: "Anti-Sharing" },
-  { path: "/kyc",            slug: "kyc",               icon: FileText,        label: "KYC Compliance" },
-  { path: "/notifications",  slug: "notifications",     icon: Bell,            label: "Notifications" },
-  { path: "/admin-roles",    slug: "admin-roles",       icon: UserCog,         label: "Admin Roles" },
-  { path: "/settings",       slug: "settings",          icon: Settings,        label: "Settings" },
+  { path: "/",               icon: LayoutDashboard, label: "Dashboard" },
+  { path: "/users",          icon: Users,           label: "Subscribers" },
+  { path: "/packages",       icon: Package,         label: "Packages" },
+  { path: "/transactions",   icon: Receipt,         label: "Transactions" },
+  { path: "/sessions",       icon: Activity,        label: "Active Sessions" },
+  { path: "/tickets",        icon: TicketCheck,     label: "Tickets" },
+  { path: "/routers",        icon: Router,          label: "MikroTik Routers" },
+  { path: "/network",        icon: Monitor,         label: "Network Monitor" },
+  { path: "/ip-pools",       icon: Database,        label: "IP Pools" },
+  { path: "/qos",            icon: Gauge,           label: "QoS / CAKE" },
+  { path: "/autorate",       icon: Activity,        label: "AutoRate Monitor" },
+  { path: "/mikrotik-scripts", icon: Terminal,       label: "MikroTik Scripts" },
+  { path: "/network-hierarchy", icon: Globe,        label: "Networks & Clouds" },
+  { path: "/analytics",      icon: BarChart3,       label: "Analytics" },
+  { path: "/ai-health",      icon: Brain,           label: "AI Health" },
+  { path: "/ai-settings",    icon: Zap,             label: "AI Settings" },
+  { path: "/pppoe-accounts", icon: Home,            label: "PPPoE Portal Mgmt" },
+  { path: "/error-logs",     icon: AlertTriangle,   label: "Error Logs" },
+  { path: "/expenditure",    icon: DollarSign,      label: "Expenditure" },
+  { path: "/bandwidth",      icon: Clock,           label: "Bandwidth Schedules" },
+  { path: "/ip-binding",     icon: Link2,           label: "IP/MAC Binding" },
+  { path: "/sharing",        icon: ShieldAlert,     label: "Anti-Sharing" },
+  { path: "/kyc",            icon: BarChart2,        label: "KYC Compliance" },
+  { path: "/notifications",  icon: Bell,            label: "Notifications" },
+  { path: "/admin-roles",    icon: UserCog,         label: "Admin Roles" },
+  { path: "/settings",       icon: Settings,        label: "Settings" },
+  { path: "/vouchers",       icon: BarChart2,       label: "Vouchers" },
 ];
 
 interface AdminSidebarProps {
-  /** Called when a nav link is clicked — used by AdminLayout to close mobile drawer */
   onNavClick?: () => void;
 }
 
@@ -68,64 +52,8 @@ const AdminSidebar = ({ onNavClick }: AdminSidebarProps) => {
   const { branding } = useBranding();
   const roleLabel = userRole?.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) ?? "Admin";
 
-  const [permissions, setPermissions] = useState<Record<string, boolean> | null>(null);
-  // FIX-SIDEBAR-BLANK (v3.20.4): Track in-flight permissions fetch. Without this,
-  // permissions===null → canSee()===false → visibleNav=[] → completely blank sidebar
-  // during the fetch. Also fixes a second bug: non-OK HTTP responses (401/403) silently
-  // left permissions=null forever because the previous code had no else branch.
-  const [loadingPerms, setLoadingPerms] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetchPerms = async () => {
-      setLoadingPerms(true);
-      try {
-        const token = getToken();
-        if (!token) {
-          // No token — show all items; login redirect will handle auth
-          if (!cancelled) { setPermissions({}); setLoadingPerms(false); }
-          return;
-        }
-        const apiBase = (window as Window & { __MIKROBILL_API__?: string }).__MIKROBILL_API__
-          ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
-        const res = await fetch(`${apiBase}/admin/my-permissions`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!cancelled) {
-          if (res.ok) {
-            const data = await res.json();
-            // Fall back to empty object (show-all) if shape is unexpected
-            setPermissions(data.success && data.permissions ? data.permissions : {});
-          } else {
-            // FIX: non-OK (401/403) — old code left permissions=null permanently here
-            setPermissions({});
-          }
-          setLoadingPerms(false);
-        }
-      } catch {
-        // Network error — fail-open (auth enforced server-side)
-        if (!cancelled) {
-          setPermissions(Object.fromEntries(ALL_NAV_ITEMS.map(i => [i.slug, true])));
-          setLoadingPerms(false);
-        }
-      }
-    };
-    fetchPerms();
-    return () => { cancelled = true; };
-  }, [userRole]);
-
-  const canSee = (slug: string): boolean => {
-    if (userRole === "super_admin") return true;
-    // FIX: return true while loading — show all items dimmed, never an empty sidebar
-    if (loadingPerms || permissions === null) return true;
-    return permissions[slug] !== false;
-  };
-
-  const visibleNav = ALL_NAV_ITEMS.filter(item => canSee(item.slug));
-
   return (
     <aside className="h-full w-full bg-sidebar border-r border-sidebar-border flex flex-col">
-      {/* Logo / brand */}
       <div className="flex items-center gap-3 px-6 py-5 border-b border-sidebar-border shrink-0">
         <div className="h-9 w-9 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
           <Wifi className="h-5 w-5 text-primary" />
@@ -140,26 +68,20 @@ const AdminSidebar = ({ onNavClick }: AdminSidebarProps) => {
         </div>
       </div>
 
-      {/* Navigation — dimmed while permissions are loading, never blank */}
-      <nav
-        className={`flex-1 px-3 py-4 space-y-0.5 overflow-y-auto transition-opacity duration-200 ${loadingPerms ? "opacity-50" : "opacity-100"}`}
-        aria-label="Main navigation"
-        aria-busy={loadingPerms}
-      >
-        {visibleNav.map(item => {
+      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto" aria-label="Main navigation">
+        {ALL_NAV_ITEMS.map(item => {
           const isActive = location.pathname === item.path;
           return (
             <Link
               key={item.path}
               to={item.path}
-              onClick={loadingPerms ? undefined : onNavClick}
+              onClick={onNavClick}
               aria-current={isActive ? "page" : undefined}
               className={[
                 "flex items-center gap-3 px-3 py-2 rounded-md text-xs font-medium transition-all duration-150",
                 isActive
                   ? "bg-sidebar-accent text-primary"
                   : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                loadingPerms ? "pointer-events-none" : "",
               ].join(" ")}
             >
               <item.icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -169,7 +91,6 @@ const AdminSidebar = ({ onNavClick }: AdminSidebarProps) => {
         })}
       </nav>
 
-      {/* Footer */}
       <div className="px-3 py-4 border-t border-sidebar-border space-y-1 shrink-0">
         <Link
           to="/hotspot"
