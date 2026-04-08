@@ -290,8 +290,7 @@ const RoutersPage = () => {
   const downloadScript = async (routerId: string, routerName: string) => {
     setDownloading(true);
     try {
-      const res = await fetch(`/api/admin/mikrotik/onboard-script/${routerId}`, {
-        });
+      const res = await fetch(`/api/admin/mikrotik/onboard-script/${routerId}`);
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
         throw new Error(json.error || "Download failed");

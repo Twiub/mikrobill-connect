@@ -27,7 +27,7 @@ const IPBindingPage = () => {
   const boundUsers   = users.filter((u: any) => u.mac_binding || u.static_ip);
   const unboundUsers = users.filter((u: any) => !u.mac_binding && !u.static_ip);
 
-  .__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
+  
 
 
   // BUG-P3-CRIT-07 FIX: Bind / Unbind MAC

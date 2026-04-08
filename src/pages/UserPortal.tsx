@@ -295,7 +295,7 @@ const UserPortal = () => {
       if (token) {
         fetch("/api/portal/keepalive", {
           method: "POST",
-          headers: {, "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json" },
         }).catch(() => {});
       }
     };
