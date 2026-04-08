@@ -159,9 +159,6 @@ const SettingsPage = () => {
   // ── system_settings state ─────────────────────────────────────────────────
   const [radius, setRadius] = useState({ radius_server_ip: "127.0.0.1", radius_secret: "", radius_host: "127.0.0.1" });
   const [uam,    setUam]    = useState({ portal_uam_url: "", portal_uam_secret: "greatsecret" });
-  const [mesh,   setMesh]   = useState({
-  });
-  const [maps,   setMaps]   = useState({
   const [sms,    setSms]    = useState({
     sms_provider: "africastalking",
     sms_provider_fallback: "none",
