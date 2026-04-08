@@ -217,7 +217,7 @@ const AdminRolesPage = () => {
             <TableBody>
               {admins.length === 0 ? (
                 <TableRow><TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">No admins yet. Click "Add Admin".</TableCell></TableRow>
-              ) : admins.map(admin => (
+              ) : admins.map((admin: any) => (
                 <TableRow key={admin.id} className="border-border/30">
                   <TableCell className="text-sm font-medium">{admin.profiles?.full_name ?? "Unknown"}</TableCell>
                   <TableCell className="text-xs font-mono text-muted-foreground">{admin.profiles?.email ?? "—"}</TableCell>

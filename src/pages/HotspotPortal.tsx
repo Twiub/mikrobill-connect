@@ -1367,7 +1367,7 @@ const HotspotPortal = () => {
         id: data.subscriber.id, username: data.subscriber.username,
         full_name: data.subscriber.full_name, phone: data.subscriber.phone,
         status: "active", expires_at: data.expiresAt,
-        package_name: data.package.name, speed_down: data.package.speed_down,
+        package_name: data.package?.name, speed_down: data.package?.speed_down,
         speed_up: data.package.speed_up, max_devices: 5, duration_days: data.package.duration_days,
         data_cap_gb: null, router_id: null,
       };
