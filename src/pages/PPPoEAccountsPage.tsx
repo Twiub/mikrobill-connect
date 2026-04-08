@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import StatusBadge from "@/components/StatusBadge";
+import { Badge } from "@/components/ui/badge";
 import { formatKES } from "@/hooks/useDatabase";
 import {
   Home, Wifi, WifiOff, CheckCircle, Eye, EyeOff, Copy,

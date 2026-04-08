@@ -28,6 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Wifi, Server, Globe, Bell, Save, Eye, EyeOff,
   Loader2, RefreshCw, CheckCircle, AlertCircle, Map,
+  ChevronUp, ChevronDown, Smartphone, Receipt, Router,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useBranding } from "@/hooks/useBranding";
