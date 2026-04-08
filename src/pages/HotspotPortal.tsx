@@ -713,7 +713,7 @@ const HotspotPortal = () => {
 
         // GAP-2 FIX: Same 429 thundering-herd protection as Layer 1.
         // fetchWithBackoff is defined inside attemptAutoReconnect so it's in scope here.
-        const tokenRes = await fetchWithBackoff(`/portal/device-token-auth`, {
+        const tokenRes = await fetch(`/portal/device-token-auth`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token: storedToken, mac: mac || undefined }),
