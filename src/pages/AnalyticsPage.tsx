@@ -11,7 +11,7 @@ const CHART_TOOLTIP_STYLE = { backgroundColor: "hsl(var(--card))", border: "1px 
 const AnalyticsPage = () => {
   const { data: transactions = [] } = useTransactions();
   const { data: subsResult }  = useSubscribers();
-  const subscribers = (subsResult as any)?.data ?? (Array.isArray(subsResult) ? subsResult : []);
+  const subscribers = Array.isArray(subsResult) ? subsResult : [];
   const { data: packages = [] }     = usePackages();
 
   const txns = transactions as any[];

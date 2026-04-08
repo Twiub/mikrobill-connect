@@ -182,7 +182,7 @@ const MikrotikScriptPage = () => {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Conn Limit / User (anti-torrent)</Label>
-                  <Input type="number" placeholder="300 (blank = disabled)" value={form.maxConnectionsPerUser ?? ""} onChange={(e) => set("maxConnectionsPerUser")(e.target.value === "" ? null : parseInt(e.target.value, 10))} />
+                  <Input type="number" placeholder="300 (blank = disabled)" value={form.maxConnectionsPerUser ?? ""} onChange={(e) => setForm(f => ({ ...f, maxConnectionsPerUser: e.target.value === "" ? null : parseInt(e.target.value, 10) }))} />
                   <p className="text-[10px] text-muted-foreground">150=strict · 300=residential · 400=PPPoE · blank=none</p>
                 </div>
               </div>

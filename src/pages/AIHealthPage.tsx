@@ -32,8 +32,8 @@ const AIHealthPage = () => {
   const { data: errorLogs = [] } = useErrorLogs();
 
   const rtrs   = routers  as Record<string, unknown>[];
-  const sess   = sessions as Record<string, unknown>[];
-  const errors = errorLogs as Record<string, unknown>[];
+  const sess   = sessions as any[];
+  const errors = errorLogs as any[];
 
   // Derive live health checks from real data
   const liveChecks = useMemo(() => {
