@@ -47,12 +47,9 @@ const ErrorLogsPage = () => {
   const { toast } = useToast();
   const [resolving, setResolving] = useState<string | null>(null);
 
-  .__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
-  // BUG-P3-CRIT-08 FIX: Export CSV — calls GET /api/admin/error-logs/export
   const handleExportCsv = async () => {
     try {
-      const res = await fetch(`/admin/error-logs/export`, {
-        });
+      const res = await fetch(`/api/admin/error-logs/export`);
       if (!res.ok) throw new Error(`Export failed (${res.status})`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
