@@ -114,9 +114,8 @@ async function apiCall(method: string, path: string, body?: object, token?: stri
 async function fetchUsageHistory(token: string | null, days = 7): Promise<{day: string; usage: number}[]> {
   if (!token) return [];
   try {
-    /api");
-    const res  = await fetch(`/portal/usage-history?days=${days}`, {
-      headers: token ? { } : {},
+    const res = await fetch(`/api/portal/usage-history?days=${days}`, {
+      headers: token ? { "Authorization": `Bearer ${token}` } : {},
     });
     if (!res.ok) throw new Error("fetch failed");
     const data = await res.json();
