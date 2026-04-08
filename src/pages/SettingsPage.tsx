@@ -32,11 +32,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useBranding } from "@/hooks/useBranding";
 
-/api");
-
 async function adminApi(method: string, path: string, body?: object) {
-  ?? ""; // FIX: use canonical mb_auth_token via authClient
-  const res = await fetch(`${API}${path}`, {
+  const res = await fetch(`/api${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
