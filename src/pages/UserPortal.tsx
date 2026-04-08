@@ -89,15 +89,14 @@ function setPortalToken(token: string, rememberDays = 30) {
   }
 }
 
-/api");
+const API = "/api";
 
 async function apiCall(method: string, path: string, body?: object, token?: string | null) {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: {
-      "Content-Type": "application/json",
-      ,
-    },
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   return res.json();
