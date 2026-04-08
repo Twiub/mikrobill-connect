@@ -166,9 +166,7 @@ const SettingsPage = () => {
     android_gw_username: "", android_gw_password: "", android_gw_device_id: "", android_gw_webhook_secret: "",
   });
   const [fcm,    setFcm]    = useState({ fcm_server_key: "", fcm_project_id: "" });
-  const [dlna,   setDlna]   = useState({
   const [tax,    setTax]    = useState({ tax_vat_rate: "16", tax_kra_pin: "" });
-  });
 
   // ── Load ──────────────────────────────────────────────────────────────────
   useEffect(() => {
