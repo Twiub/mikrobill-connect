@@ -67,9 +67,9 @@ const ErrorLogsPage = () => {
   const handleResolve = async (log: any) => {
     setResolving(log.id);
     try {
-      const res = await fetch(`/admin/error-logs/${log.id}/resolve`, {
+      const res = await fetch(`/api/admin/error-logs/${log.id}/resolve`, {
         method: "PATCH",
-        });
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to resolve");
       toast({ title: "Resolved", description: "Log entry marked as resolved." });

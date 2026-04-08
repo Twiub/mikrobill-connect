@@ -50,10 +50,7 @@ const MikrotikScriptPage = () => {
 
     setLoading(true);
     try {
-      const apiBase = import.meta.env.VITE_BACKEND_URL ?? "/api";
-      ?? "";
-
-      const res = await fetch(`/admin/mikrotik/setup-script`, {
+      const res = await fetch(`/api/admin/mikrotik/setup-script`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify(form),

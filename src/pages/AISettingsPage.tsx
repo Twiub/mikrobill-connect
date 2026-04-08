@@ -12,10 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Brain, Save, RefreshCw, CheckCircle, AlertCircle, Loader2, Zap, Bell, MapPin, MessageSquare } from "lucide-react";
-const API = "";
 async function adminApi(method: string, path: string, body?: object) {
-  ?? ""; // FIX: canonical mb_auth_token
-  const res = await fetch(`${API}${path}`, {
+  const res = await fetch(`/api${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,

@@ -15,10 +15,8 @@ import {
   Home, Wifi, WifiOff, CheckCircle, Eye, EyeOff, Copy,
   Loader2, RefreshCw, Search, Phone, User, Lock,
 } from "lucide-react";
-/api");
 async function adminApi(method: string, path: string, body?: object) {
-  ?? ""; // FIX: canonical mb_auth_token
-  const res = await fetch(`${API}${path}`, {
+  const res = await fetch(`/api${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,

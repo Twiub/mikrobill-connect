@@ -43,12 +43,10 @@ const SessionsPage = () => {
   const handleDisconnect = async (session: any) => {
     setDisconnecting(session.id);
     try {
-      /api");
-      const res = await fetch(`/admin/mikrotik/disconnect`, {
+      const res = await fetch(`/api/admin/mikrotik/disconnect`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ,
         },
         // BUG-P3-HIGH-01 FIX: backend mikrotik.js:731 validates routerIds as .isArray({min:1}).
         // Sending routerId (string) always failed validation; wrap in array.

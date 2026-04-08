@@ -209,10 +209,7 @@ const SettingsPage = () => {
           android_gw_webhook_secret: s.android_gw_webhook_secret ?? "",
         });
         setFcm({ fcm_server_key: s.fcm_server_key ?? "", fcm_project_id: s.fcm_project_id ?? "" });
-        setDlna({
         setTax({ tax_vat_rate: s.tax_vat_rate ?? "16", tax_kra_pin: s.tax_kra_pin ?? "" });
-        setFwa({
-        });
       })
       .catch(() => toast({ title: "Failed to load settings", variant: "destructive" }))
       .finally(() => setSysLoading(false));
