@@ -197,9 +197,6 @@ const SettingsPage = () => {
         const s = d.settings;
         setRadius({ radius_server_ip: s.radius_server_ip ?? "127.0.0.1", radius_secret: s.radius_secret ?? "", radius_host: s.radius_host ?? "127.0.0.1" });
         setUam({ portal_uam_url: s.portal_uam_url ?? "", portal_uam_secret: s.portal_uam_secret ?? "greatsecret" });
-        setMesh({
-        });
-        setMaps({
         setSms({
           sms_provider:             s.sms_provider             ?? "africastalking",
           sms_provider_fallback:    s.sms_provider_fallback    ?? "none",
