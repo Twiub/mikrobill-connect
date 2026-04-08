@@ -89,15 +89,14 @@ function setPortalToken(token: string, rememberDays = 30) {
   }
 }
 
-/api");
+const API = "/api";
 
 async function apiCall(method: string, path: string, body?: object, token?: string | null) {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: {
-      "Content-Type": "application/json",
-      ,
-    },
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   return res.json();
@@ -115,9 +114,8 @@ async function apiCall(method: string, path: string, body?: object, token?: stri
 async function fetchUsageHistory(token: string | null, days = 7): Promise<{day: string; usage: number}[]> {
   if (!token) return [];
   try {
-    /api");
-    const res  = await fetch(`/portal/usage-history?days=${days}`, {
-      headers: token ? { } : {},
+    const res = await fetch(`/api/portal/usage-history?days=${days}`, {
+      headers: token ? { "Authorization": `Bearer ${token}` } : {},
     });
     if (!res.ok) throw new Error("fetch failed");
     const data = await res.json();
@@ -297,7 +295,7 @@ const UserPortal = () => {
       if (token) {
         fetch("/api/portal/keepalive", {
           method: "POST",
-          headers: {, "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json" },
         }).catch(() => {});
       }
     };

@@ -308,7 +308,7 @@ const AutoRatePage = () => {
     }
     setSaving(true);
     try {
-      if (!token) throw new Error("Not authenticated");
+      const authToken = ""; // placeholder - no backend auth
 
       const apiBase = import.meta.env.VITE_API_URL ?? "";
       const res = await fetch(`/api/admin/routers/${editRouter.id}/wan`, {

@@ -267,7 +267,6 @@ const RoutersPage = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ,
         },
         body: JSON.stringify(payload),
       });
@@ -291,8 +290,7 @@ const RoutersPage = () => {
   const downloadScript = async (routerId: string, routerName: string) => {
     setDownloading(true);
     try {
-      const res = await fetch(`/api/admin/mikrotik/onboard-script/${routerId}`, {
-        });
+      const res = await fetch(`/api/admin/mikrotik/onboard-script/${routerId}`);
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
         throw new Error(json.error || "Download failed");
@@ -347,10 +345,6 @@ const RoutersPage = () => {
       dhcp_pool: r.dhcp_pool ?? "",
       dhcp_prefix_length: r.dhcp_prefix_length ?? 24,
       targeted_users: 0,
-      // BUG-DLNA-01 FIX: per-router DLNA fields (migration 261)
-      dlna_server_ip: r.dlna_server_ip ?? "",
-      dlna_port: r.dlna_port ?? 8200,
-      dlna_enabled: r.dlna_enabled ?? null,  // null = use global setting
     });
     setEditOpen(true);
   };

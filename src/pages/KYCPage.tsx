@@ -29,15 +29,13 @@ const KYCPage = () => {
   const { toast } = useToast();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  .__MIKROBILL_API__ ?? (import.meta.env.VITE_BACKEND_URL ?? "/api");
 
-  // BUG-P3-CRIT-03 FIX: Verify button previously had no onClick handler.
   const handleVerify = async (kyc: any) => {
     setActionLoading(`verify-${kyc.id}`);
     try {
-      const res = await fetch(`/admin/kyc/${kyc.id}/verify`, {
+      const res = await fetch(`/api/admin/kyc/${kyc.id}/verify`, {
         method: "PUT",
-        });
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to verify");
       toast({ title: "KYC Verified", description: `${kyc.full_name} marked as verified.` });

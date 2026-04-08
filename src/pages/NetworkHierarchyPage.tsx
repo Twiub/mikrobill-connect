@@ -18,13 +18,12 @@ import {
   Globe, Plus, Trash2, RefreshCw, ChevronRight, ChevronDown, Cloud, MapPin, Edit,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-/api");
+
 async function apiFetch(path: string, opts: RequestInit = {}) {
-  const res = await fetch(`${API}${path}`, {
+  const res = await fetch(`/api${path}`, {
     ...opts,
     headers: {
       "Content-Type": "application/json",
-      ,
       ...(opts.headers ?? {}),
     },
   });

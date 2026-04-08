@@ -27,7 +27,7 @@ const Dashboard = () => {
   const { data: sessions = [] }     = useActiveSessions();
   const { data: routers = [] }      = useRouters();
   const { data: subsResult }  = useSubscribers();
-  const subscribers = subsResult?.data ?? (Array.isArray(subsResult) ? subsResult : []);
+  const subscribers = Array.isArray(subsResult) ? subsResult : [];
 
   const txns = transactions as any[];
   const rtrs = routers as any[];

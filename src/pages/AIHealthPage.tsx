@@ -26,14 +26,15 @@ const overallStyles: Record<string, string> = {
 
 const AIHealthPage = () => {
   const queryClient = useQueryClient();
-  const { data: report }   = useAiHealthReports();
+  const { data: reports }   = useAiHealthReports();
+  const report = Array.isArray(reports) ? reports[0] : reports;
   const { data: routers = [] }  = useRouters();
   const { data: sessions = [] } = useActiveSessions();
   const { data: errorLogs = [] } = useErrorLogs();
 
   const rtrs   = routers  as Record<string, unknown>[];
-  const sess   = sessions as Record<string, unknown>[];
-  const errors = errorLogs as Record<string, unknown>[];
+  const sess   = sessions as any[];
+  const errors = errorLogs as any[];
 
   // Derive live health checks from real data
   const liveChecks = useMemo(() => {

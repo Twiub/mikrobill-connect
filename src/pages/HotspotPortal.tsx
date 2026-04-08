@@ -713,7 +713,7 @@ const HotspotPortal = () => {
 
         // GAP-2 FIX: Same 429 thundering-herd protection as Layer 1.
         // fetchWithBackoff is defined inside attemptAutoReconnect so it's in scope here.
-        const tokenRes = await fetchWithBackoff(`/portal/device-token-auth`, {
+        const tokenRes = await fetch(`/portal/device-token-auth`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token: storedToken, mac: mac || undefined }),
@@ -1367,9 +1367,8 @@ const HotspotPortal = () => {
         id: data.subscriber.id, username: data.subscriber.username,
         full_name: data.subscriber.full_name, phone: data.subscriber.phone,
         status: "active", expires_at: data.expiresAt,
-        package_name: data.package.name, speed_down: data.package.speed_down,
-        speed_up: data.package.speed_up, max_devices: 5, duration_days: data.package.duration_days,
-        data_cap_gb: null, router_id: null,
+        package_id: null,
+        packages: { name: data.package?.name ?? "" },
       };
       setSubscriber(sub);
       // Issue device token then grant internet

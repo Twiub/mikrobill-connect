@@ -28,15 +28,13 @@ import { Badge } from "@/components/ui/badge";
 import {
   Wifi, Server, Globe, Bell, Save, Eye, EyeOff,
   Loader2, RefreshCw, CheckCircle, AlertCircle, Map,
+  ChevronUp, ChevronDown, Smartphone, Receipt, Router,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useBranding } from "@/hooks/useBranding";
 
-/api");
-
 async function adminApi(method: string, path: string, body?: object) {
-  ?? ""; // FIX: use canonical mb_auth_token via authClient
-  const res = await fetch(`${API}${path}`, {
+  const res = await fetch(`/api${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
@@ -162,9 +160,6 @@ const SettingsPage = () => {
   // ── system_settings state ─────────────────────────────────────────────────
   const [radius, setRadius] = useState({ radius_server_ip: "127.0.0.1", radius_secret: "", radius_host: "127.0.0.1" });
   const [uam,    setUam]    = useState({ portal_uam_url: "", portal_uam_secret: "greatsecret" });
-  const [mesh,   setMesh]   = useState({
-  });
-  const [maps,   setMaps]   = useState({
   const [sms,    setSms]    = useState({
     sms_provider: "africastalking",
     sms_provider_fallback: "none",
@@ -172,9 +167,7 @@ const SettingsPage = () => {
     android_gw_username: "", android_gw_password: "", android_gw_device_id: "", android_gw_webhook_secret: "",
   });
   const [fcm,    setFcm]    = useState({ fcm_server_key: "", fcm_project_id: "" });
-  const [dlna,   setDlna]   = useState({
   const [tax,    setTax]    = useState({ tax_vat_rate: "16", tax_kra_pin: "" });
-  });
 
   // ── Load ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -205,9 +198,6 @@ const SettingsPage = () => {
         const s = d.settings;
         setRadius({ radius_server_ip: s.radius_server_ip ?? "127.0.0.1", radius_secret: s.radius_secret ?? "", radius_host: s.radius_host ?? "127.0.0.1" });
         setUam({ portal_uam_url: s.portal_uam_url ?? "", portal_uam_secret: s.portal_uam_secret ?? "greatsecret" });
-        setMesh({
-        });
-        setMaps({
         setSms({
           sms_provider:             s.sms_provider             ?? "africastalking",
           sms_provider_fallback:    s.sms_provider_fallback    ?? "none",
@@ -220,10 +210,7 @@ const SettingsPage = () => {
           android_gw_webhook_secret: s.android_gw_webhook_secret ?? "",
         });
         setFcm({ fcm_server_key: s.fcm_server_key ?? "", fcm_project_id: s.fcm_project_id ?? "" });
-        setDlna({
         setTax({ tax_vat_rate: s.tax_vat_rate ?? "16", tax_kra_pin: s.tax_kra_pin ?? "" });
-        setFwa({
-        });
       })
       .catch(() => toast({ title: "Failed to load settings", variant: "destructive" }))
       .finally(() => setSysLoading(false));

@@ -6,16 +6,17 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { useMemo } from "react";
 
 const COLORS = ["hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))"];
+const CHART_TOOLTIP_STYLE = { backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", color: "hsl(var(--foreground))" } as const;
 
 const AnalyticsPage = () => {
   const { data: transactions = [] } = useTransactions();
   const { data: subsResult }  = useSubscribers();
-  const subscribers = (subsResult as any)?.data ?? (Array.isArray(subsResult) ? subsResult : []);
+  const subscribers = Array.isArray(subsResult) ? subsResult : [];
   const { data: packages = [] }     = usePackages();
 
-  const txns = transactions as Record<string, unknown>[];
-  const subs = subscribers as Record<string, unknown>[];
-  const pkgs = packages as Record<string, unknown>[];
+  const txns = transactions as any[];
+  const subs = subscribers as any[];
+  const pkgs = packages as any[];
 
   const totalRevenue = txns.filter(t => t.status === "success").reduce((s, t) => s + Number(t.amount), 0);
   const totalUsers   = subs.length;

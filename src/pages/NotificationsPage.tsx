@@ -226,10 +226,7 @@ const NotificationsPage = () => {
       });
       if (!notifRes.ok) throw new Error(`HTTP ${notifRes.status}`);
       // BUG-P3-CRIT-09 FIX: Previously .catch(() => {}) swallowed all errors and showed
-      // "Broadcast Queued" even when the backend call failed. Now errors are surfaced.
-      /api");
-      ?? "";
-      const bcastRes = await fetch(`/admin/notifications/broadcast`, {
+      const bcastRes = await fetch(`/api/admin/notifications/broadcast`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(broadcast),
